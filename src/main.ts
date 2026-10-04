@@ -282,6 +282,36 @@ const fromHash = location.hash.match(/^#p=(.+)$/)?.[1];
 const shared = fromHash && decode(fromHash);
 if (shared) { apply(shared); say("loaded shared preset"); }
 
+// --- recording: tap the master gain into a MediaRecorder; stopping downloads the file ---
+let rec: MediaRecorder | null = null;
+const recBtn = document.getElementById("rec") as HTMLButtonElement;
+const stopRec = () => { if (rec && rec.state !== "inactive") rec.stop(); };
+recBtn.onclick = () => {
+  if (rec && rec.state !== "inactive") return stopRec();
+  const m = master;
+  if (!m) return say("press start first, then record");
+  const dest = (m.context as AudioContext).createMediaStreamDestination();
+  m.connect(dest);
+  const r = (rec = new MediaRecorder(dest.stream));
+  const chunks: Blob[] = [];
+  r.ondataavailable = (e) => chunks.push(e.data);
+  r.onstop = () => {
+    try { m.disconnect(dest); } catch { /* context already closed */ }
+    recBtn.setAttribute("aria-pressed", "false");
+    const ext = r.mimeType.includes("mp4") ? "m4a" : r.mimeType.includes("ogg") ? "ogg" : "webm";
+    const a = Object.assign(document.createElement("a"), {
+      href: URL.createObjectURL(new Blob(chunks, { type: r.mimeType })),
+      download: `tangle-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.${ext}`,
+    });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    say(`saved ${a.download}`);
+  };
+  r.start();
+  recBtn.setAttribute("aria-pressed", "true");
+  say("recording…");
+};
+
 // --- audio ---
 let stop: (() => void) | null = null;
 const go = document.getElementById("go") as HTMLButtonElement;
@@ -316,7 +346,7 @@ go.onclick = async () => {
       if (timers.length > 64) timers = timers.slice(-32); // old ones have fired long ago
     }
   });
-  stop = () => { stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); panners = []; gains = []; master = null; live.fill(null); drawPad(); ctx.close(); };
+  stop = () => { stopRec(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); panners = []; gains = []; master = null; live.fill(null); drawPad(); ctx.close(); };
   go.textContent = "stop";
   go.setAttribute("aria-pressed", "true");
 };
