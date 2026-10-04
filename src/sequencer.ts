@@ -8,7 +8,7 @@ export type Pattern = (from: number, to: number) => Ev[];
 export const stub = (step = 0.25, root = 48): Pattern => (from, to) => {
   const out: Ev[] = [];
   for (let i = Math.ceil(from / step); i * step < to; i++) {
-    out.push({ time: i * step, pitch: root + [0, 7, 3, 10, 5, 12][(i * 5) % 6], dur: step * 0.8 });
+    out.push({ time: i * step, pitch: root + [0, 7, 3, 10, 5, 12][(i * 5) % 6], dur: step * 0.8, params: { shape: 3 * (Math.floor(i / 12) % 4), timbre: (i % 8) / 8 } });
   }
   return out;
 };
