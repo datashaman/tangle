@@ -25,8 +25,8 @@ const section = (title: string, host: HTMLElement = app) => {
   return s;
 };
 // Double-click a control (or a dropdown's label) to reset it to its default.
-const slider = (parent: HTMLElement, label: string, [min, max, step]: readonly number[], def: number, get: () => number, set: (v: number) => void) => {
-  const l = html(`<label class="row"><span title="${label}">${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><output></output></label>`);
+const slider = (parent: HTMLElement, label: string, [min, max, step]: readonly number[], def: number, get: () => number, set: (v: number) => void, hint = label) => {
+  const l = html(`<label class="row"><span title="${hint}">${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><output></output></label>`);
   const input = l.querySelector("input")!, out = l.querySelector("output")!;
   const show = () => { input.value = String(get()); out.textContent = fmt(get()); };
   input.oninput = () => { set(+input.value); out.textContent = fmt(get()); };
@@ -60,9 +60,10 @@ let panners: PannerNode[] = [];
 // Where each voice actually is right now (after sequenced motion); null when it isn't moving.
 const live: ({ az: number; dist: number } | null)[] = [null, null, null];
 let timers: number[] = [];
-let gains: GainNode[] = []; // per-voice level, then the master
+let gains: GainNode[] = []; // per-voice level
+let sends: { d: GainNode; r: GainNode }[] = []; // per-voice delay and reverb sends, taken after level and position
 let master: GainNode | null = null;
-// Effects sit on a bus between the voices and the master: dry + a tempo-synced delay + a convolution reverb.
+// Effects: each voice goes dry to the master and, through its own send gains, into a shared tempo-synced delay and convolution reverb.
 type Fx = { delay: DelayNode; fb: GainNode; delayWet: GainNode; reverb: ConvolverNode; reverbWet: GainNode; irSize: number };
 let fx: Fx | null = null;
 let held = -1; // voice currently being dragged on the pad, or -1
@@ -76,6 +77,10 @@ const updatePanners = () => { live.fill(null); drawPad(); panners.forEach((pn, i
 // Mixer: vertical faders. Levels are smoothed gain changes so dragging doesn't click.
 const updateMix = () => {
   gains.forEach((g, i) => g.gain.setTargetAtTime(p.voices[i].level, g.context.currentTime, 0.015));
+  sends.forEach((s, i) => {
+    s.d.gain.setTargetAtTime(p.voices[i].delaySend, s.d.context.currentTime, 0.015);
+    s.r.gain.setTargetAtTime(p.voices[i].reverbSend, s.r.context.currentTime, 0.015);
+  });
   if (master) master.gain.setTargetAtTime(p.volume, master.context.currentTime, 0.015);
 };
 const updateFx = () => {
@@ -108,6 +113,8 @@ const strip = html(`<div class="mixer"></div>`);
 mixer.append(strip);
 p.voices.forEach((v, i) => {
   const chan = fader(strip, `voice ${i + 1}`, R.level, DEFAULTS.voices[i].level, () => v.level, (x) => (v.level = x));
+  slider(chan, "dly", R.send, DEFAULTS.voices[i].delaySend, () => v.delaySend, (x) => { v.delaySend = x; updateMix(); }, "delay send");
+  slider(chan, "rev", R.send, DEFAULTS.voices[i].reverbSend, () => v.reverbSend, (x) => { v.reverbSend = x; updateMix(); }, "reverb send");
   checkbox(chan, "on", () => v.on, (x) => { v.on = x; drawPad(); });
 });
 fader(strip, "master", R.volume, DEFAULTS.volume, () => p.volume, (x) => (p.volume = x));
@@ -453,20 +460,24 @@ go.onclick = async () => {
   });
   master = new GainNode(ctx);
   master.connect(ctx.destination);
-  const bus = new GainNode(ctx); // everything the voices make; the effects are sends off it
-  bus.connect(master);
   const delay = new DelayNode(ctx, { maxDelayTime: 4 });
   const tone = new BiquadFilterNode(ctx, { type: "lowpass", frequency: 3500 }); // darkens each repeat
   const fb = new GainNode(ctx), delayWet = new GainNode(ctx, { gain: 0 });
-  bus.connect(delay); delay.connect(tone); tone.connect(fb); fb.connect(delay); tone.connect(delayWet); delayWet.connect(master);
+  delay.connect(tone); tone.connect(fb); fb.connect(delay); tone.connect(delayWet); delayWet.connect(master);
   const reverb = new ConvolverNode(ctx), reverbWet = new GainNode(ctx, { gain: 0 });
-  bus.connect(reverb); reverb.connect(reverbWet); reverbWet.connect(master);
+  reverb.connect(reverbWet); reverbWet.connect(master);
   fx = { delay, fb, delayWet, reverb, reverbWet, irSize: -1 };
   gains = nodes.map(() => new GainNode(ctx));
   panners = nodes.map((n, i) => {
     const pn = new PannerNode(ctx, { distanceModel: "inverse", refDistance: 1 });
-    n.connect(gains[i]).connect(pn).connect(bus);
+    n.connect(gains[i]).connect(pn).connect(master!);
     return pn;
+  });
+  sends = panners.map((pn) => {
+    const d = new GainNode(ctx), r = new GainNode(ctx);
+    pn.connect(d).connect(delay);
+    pn.connect(r).connect(reverb);
+    return { d, r };
   });
   updatePanners();
   updateMix();
@@ -490,7 +501,7 @@ go.onclick = async () => {
       if (timers.length > 64) timers = timers.slice(-32); // old ones have fired long ago
     }
   });
-  stop = () => { stopRec(); takePlay = null; actx = null; played.length = 0; setTakeUi(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); panners = []; gains = []; master = null; fx = null; live.fill(null); drawPad(); ctx.close(); };
+  stop = () => { stopRec(); takePlay = null; actx = null; played.length = 0; setTakeUi(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); panners = []; gains = []; sends = []; master = null; fx = null; live.fill(null); drawPad(); ctx.close(); };
   go.textContent = "stop";
   go.setAttribute("aria-pressed", "true");
 };
