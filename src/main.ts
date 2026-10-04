@@ -23,7 +23,7 @@ const section = (title: string, host: HTMLElement = app) => {
 };
 // Double-click a control (or a dropdown's label) to reset it to its default.
 const slider = (parent: HTMLElement, label: string, [min, max, step]: readonly number[], def: number, get: () => number, set: (v: number) => void) => {
-  const l = html(`<label><span>${label} <output></output></span><input type="range" min="${min}" max="${max}" step="${step}"></label>`);
+  const l = html(`<label class="row"><span title="${label}">${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><output></output></label>`);
   const input = l.querySelector("input")!, out = l.querySelector("output")!;
   const show = () => { input.value = String(get()); out.textContent = fmt(get()); };
   input.oninput = () => { set(+input.value); out.textContent = fmt(get()); };
@@ -33,7 +33,7 @@ const slider = (parent: HTMLElement, label: string, [min, max, step]: readonly n
   parent.append(l);
 };
 const select = (parent: HTMLElement, label: string, options: [string, string][], def: string, get: () => string, set: (v: string) => void) => {
-  const l = html(`<label><span>${label}</span><select>${options.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select></label>`);
+  const l = html(`<label class="row"><span title="${label}">${label}</span><select>${options.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select></label>`);
   const sel = l.querySelector("select")!;
   sel.onchange = () => set(sel.value);
   const show = () => (sel.value = get());
@@ -118,7 +118,7 @@ slider(rhythm, "déjà vu", R.dejaVu, DEFAULTS.dejaVu, () => p.dejaVu, (v) => { 
 slider(rhythm, "length", R.length, DEFAULTS.length, () => p.length, (v) => (p.length = v));
 // Seed picks which random loop you get; "new" rolls one. Changing it takes effect on the next tick.
 {
-  const l = html(`<label title="double-click to reset"><span>seed</span><input type="number" min="${R.seed[0]}" max="${R.seed[1]}" step="1" style="width:7em"> <button type="button">new</button></label>`);
+  const l = html(`<label class="row" title="double-click to reset"><span>seed</span><input type="number" min="${R.seed[0]}" max="${R.seed[1]}" step="1"><button type="button">new</button></label>`);
   const input = l.querySelector("input")!;
   const setSeed = (v: number) => { p.seed = Math.min(R.seed[1], Math.max(R.seed[0], Math.round(v) || DEFAULTS.seed)); input.value = String(p.seed); };
   input.onchange = () => setSeed(+input.value);
@@ -162,8 +162,13 @@ select(pitch, "scale", [...Object.keys(SCALES), CUSTOM].map((s) => [s, s]), DEFA
 slider(pitch, "spread", R.spread, DEFAULTS.spread, () => p.spread, (v) => (p.spread = v));
 slider(pitch, "bias", R.pitchBias, DEFAULTS.pitchBias, () => p.pitchBias, (v) => (p.pitchBias = v));
 
+const voicesCard = section("Voices");
+voicesCard.classList.add("wide");
+const voicesGrid = html(`<div class="voices"></div>`);
+voicesCard.append(voicesGrid);
 p.voices.forEach((v, i) => {
-  const s = section(i === 2 ? "Voice 3 · every tick" : `Voice ${i + 1}`);
+  const s = html(`<div class="voice"><h3>Voice ${i + 1}${i === 2 ? " · every tick" : ""}</h3></div>`);
+  voicesGrid.append(s);
   select(s, "shape", SHAPES.map((n, k) => [String(k), n]), String(DEFAULTS.voices[i].shape), () => String(v.shape), (x) => (v.shape = +x));
   slider(s, "timbre", R.timbre, DEFAULTS.voices[i].timbre, () => v.timbre, (x) => (v.timbre = x));
   slider(s, "color", R.color, DEFAULTS.voices[i].color, () => v.color, (x) => (v.color = x));

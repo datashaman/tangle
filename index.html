@@ -11,36 +11,49 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; }
   main { max-width: 1400px; margin: 0 auto; padding: 16px; }
-  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
   h1 { font-size: 20px; margin: 0 8px 0 0; letter-spacing: .02em; }
-  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
+  h3 { font-size: 12px; color: var(--muted); margin: 0 0 6px; }
   .layout { display: grid; gap: 16px; grid-template-columns: 1fr; align-items: start; }
-  @media (min-width: 900px) {
-    .layout { grid-template-columns: 1fr 340px; }
-    #side { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; } /* Space stays in view */
+  #side { order: -1; } /* narrow windows: the pad comes first */
+  @media (min-width: 760px) {
+    .layout { grid-template-columns: 1fr 300px; }
+    #side { order: 0; position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow: auto; } /* Space stays in view */
   }
   .mixer { display: flex; justify-content: space-around; gap: 8px; }
   .chan { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   .chan label { margin-bottom: 0; }
   .chan label.ch { display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .chan label.ch span { display: block; text-align: center; }
-  .chan input[type=range] { writing-mode: vertical-lr; direction: rtl; width: 28px; height: 120px; margin: 0; }
-  details { margin-top: 4px; }
-  summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
-  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-  section, .bar { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
-  label { display: block; margin-bottom: 10px; }
-  label > span { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; }
+  .chan input[type=range] { writing-mode: vertical-lr; direction: rtl; width: 28px; height: 90px; margin: 0; }
+  details { margin-top: 2px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+  .voices { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .voices .row { grid-template-columns: 3.6em 1fr 3em; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .grid > .wide { grid-column: 1 / -1; }
+  @media (min-width: 1250px) { .grid > .wide { grid-column: span 2; } }
+  section, .bar { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 10px; margin-left: auto; }
+  label { display: block; margin-bottom: 4px; }
+  /* one compact line per control: name | control | value */
+  .row { display: grid; grid-template-columns: 6.5em 1fr 3.2em; align-items: center; gap: 8px; }
+  .row > span { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row output { text-align: right; }
+  .row input, .row select { min-width: 0; width: 100%; margin: 0; }
+  .row select { grid-column: 2 / -1; }
+  details .row { grid-template-columns: 1fr 3.2em; margin-bottom: 6px; } /* inside folds the name sits above the control */
+  details .row > span { grid-column: 1 / -1; }
+  details .row select { grid-column: 1 / -1; }
   output { font-variant-numeric: tabular-nums; color: var(--fg); }
-  input[type=range] { width: 100%; accent-color: var(--accent); margin: 4px 0 0; }
-  select, input[type=text], button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; max-width: 100%; }
-  label select { width: 100%; margin-top: 4px; }
+  input[type=range] { accent-color: var(--accent); }
+  select, input[type=text], button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; max-width: 100%; }
   button { cursor: pointer; }
   header button[aria-pressed="true"]:not(.primary) { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
   button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; min-width: 84px; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .kb { position: relative; display: flex; height: 92px; margin-bottom: 10px; }
+  .kb { position: relative; display: flex; height: 72px; margin-bottom: 6px; }
   .kb button { padding: 0; font-size: 11px; cursor: pointer; }
   .kb .w { position: relative; flex: 1; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; background: #faf9f5; color: #55554f; border: 1px solid #b9b7ac; border-radius: 0 0 5px 5px; }
   .kb .b { position: absolute; top: 0; z-index: 1; width: 8.5%; height: 58%; transform: translateX(-50%); background: #26261f; color: #ddd; border: 1px solid #000; border-radius: 0 0 4px 4px; }
@@ -49,7 +62,7 @@
   .kb .root::before { content: ""; position: absolute; left: 50%; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: currentColor; }
   .kb .w.root::before { bottom: 22px; }
   .kb .b.root::before { bottom: 6px; }
-  .pad { display: block; width: 100%; max-width: 320px; margin: 0 auto 10px; touch-action: none; }
+  .pad { display: block; width: 100%; max-width: 260px; margin: 0 auto 6px; touch-action: none; }
   .pad .ring { fill: none; stroke: var(--line); stroke-width: 1; }
   .pad .head { fill: var(--muted); stroke: none; }
   .pad .vp { cursor: grab; }
@@ -62,8 +75,8 @@
 </style>
 <main>
   <header><h1>tangle</h1><button id="go" class="primary" aria-pressed="false">start</button>
-    <button id="freeze" aria-pressed="false" title="Lock the last N steps of rhythm, pitch and motion into a loop (press f)">freeze</button></header>
-  <div class="bar" id="presets"></div>
+    <button id="freeze" aria-pressed="false" title="Lock the last N steps of rhythm, pitch and motion into a loop (press f)">freeze</button>
+    <div class="bar" id="presets"></div></header>
   <div class="layout"><div class="grid" id="app"></div><aside id="side"></aside></div>
 </main>
 <script type="module" src="/src/main.ts"></script>
