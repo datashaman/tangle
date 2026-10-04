@@ -66,7 +66,7 @@ slider(rhythm, "length", R.length, DEFAULTS.length, () => p.length, (v) => (p.le
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const pitch = section("Pitch");
 select(pitch, "root", NOTES.map((n, i) => [String(48 + i), n]), String(DEFAULTS.root), () => String(p.root), (v) => { p.root = +v; sync.forEach((f) => f()); });
-select(pitch, "scale", [...Object.keys(SCALES), CUSTOM].map((s) => [s, s]), DEFAULTS.scale, () => p.scale, (v) => (p.scale = v));
+select(pitch, "scale", [...Object.keys(SCALES), CUSTOM].map((s) => [s, s]), DEFAULTS.scale, () => p.scale, (v) => { p.scale = v; sync.forEach((f) => f()); }); // refresh the note buttons
 // Note toggles, labelled with real note names for the current root. Editing a preset scale copies it into "custom".
 {
   const keys = html(`<div role="group" aria-label="scale notes" style="display:grid;grid-template-columns:repeat(12,1fr);gap:2px;margin-bottom:10px"></div>`);
