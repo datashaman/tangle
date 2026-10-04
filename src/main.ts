@@ -91,6 +91,22 @@ p.voices.forEach((v, i) => {
 });
 fader(strip, "master", R.volume, DEFAULTS.volume, () => p.volume, (x) => (p.volume = x));
 
+// Freeze: déjà vu 0.5 stops every stream mutating, so the last `length` steps of rhythm, pitch and motion repeat.
+// Unfreezing restores the previous déjà vu settings; touching either déjà vu slider (or loading a preset) just drops the freeze.
+let thawed: { dejaVu: number; spaceDejaVu: number } | null = null;
+const freezeBtn = document.getElementById("freeze") as HTMLButtonElement;
+const forget = () => { thawed = null; freezeBtn.setAttribute("aria-pressed", "false"); };
+const setFrozen = (on: boolean) => {
+  if (on) { thawed = { dejaVu: p.dejaVu, spaceDejaVu: p.spaceDejaVu }; p.dejaVu = p.spaceDejaVu = 0.5; }
+  else if (thawed) { p.dejaVu = thawed.dejaVu; p.spaceDejaVu = thawed.spaceDejaVu; thawed = null; }
+  freezeBtn.setAttribute("aria-pressed", String(on));
+  sync.forEach((f) => f());
+};
+freezeBtn.onclick = () => setFrozen(thawed === null);
+addEventListener("keydown", (e) => {
+  if (e.key === "f" && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target as HTMLElement).closest("input, select, textarea")) setFrozen(thawed === null);
+});
+
 const clock = section("Clock");
 slider(clock, "tick length (s)", R.step, DEFAULTS.step, () => p.step, (v) => (p.step = v));
 slider(clock, "jitter", R.jitter, DEFAULTS.jitter, () => p.jitter, (v) => (p.jitter = v));
@@ -98,7 +114,7 @@ slider(clock, "jitter", R.jitter, DEFAULTS.jitter, () => p.jitter, (v) => (p.jit
 const rhythm = section("Rhythm");
 select(rhythm, "model", MODELS.map((m) => [m, m]), DEFAULTS.model, () => p.model, (v) => (p.model = v as TParams["model"]));
 slider(rhythm, "bias", R.bias, DEFAULTS.bias, () => p.bias, (v) => (p.bias = v));
-slider(rhythm, "déjà vu", R.dejaVu, DEFAULTS.dejaVu, () => p.dejaVu, (v) => (p.dejaVu = v));
+slider(rhythm, "déjà vu", R.dejaVu, DEFAULTS.dejaVu, () => p.dejaVu, (v) => { p.dejaVu = v; forget(); });
 slider(rhythm, "length", R.length, DEFAULTS.length, () => p.length, (v) => (p.length = v));
 // Seed picks which random loop you get; "new" rolls one. Changing it takes effect on the next tick.
 {
@@ -163,7 +179,7 @@ p.voices.forEach((v, i) => {
 });
 
 const space = section("Space", side);
-slider(space, "spatial déjà vu", R.spaceDejaVu, DEFAULTS.spaceDejaVu, () => p.spaceDejaVu, (v) => (p.spaceDejaVu = v));
+slider(space, "spatial déjà vu", R.spaceDejaVu, DEFAULTS.spaceDejaVu, () => p.spaceDejaVu, (v) => { p.spaceDejaVu = v; forget(); });
 slider(space, "spatial length", R.spaceLength, DEFAULTS.spaceLength, () => p.spaceLength, (v) => (p.spaceLength = v));
 // Top-down pad: drag a voice around the listener. 10 svg units = 1 distance unit; front is up.
 {
@@ -212,6 +228,7 @@ const save = (o: Record<string, unknown>) => { try { localStorage.setItem(KEY, J
 
 // Voice objects are captured by their controls, so copy into them in place.
 const apply = (next: TParams) => {
+  forget();
   const { voices, ...rest } = next;
   Object.assign(p, rest);
   p.voices.forEach((v, i) => Object.assign(v, voices[i]));

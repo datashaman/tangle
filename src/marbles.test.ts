@@ -202,3 +202,15 @@ test("motion: spatial deja vu loops independently of the rhythm and pitch loop",
   assert.deepEqual(el.slice(0, 4), el.slice(4, 8));
   assert.notDeepEqual(pitch.slice(0, 4), pitch.slice(4, 8));
 });
+
+test("freeze: setting deja vu to 0.5 loops the last `length` steps", () => {
+  const p = motionParams({}, 0, 8); // rhythm/pitch fully random; voice 1 fires every tick
+  const pat = marbles(p);
+  const before = v0(pat(0, 20)).map((e) => e.pitch); // 80 ticks of ever-changing notes
+  p.dejaVu = 0.5; // freeze
+  const after = v0(pat(20, 30)).map((e) => e.pitch);
+  assert.deepEqual(after.slice(0, 8), before.slice(-8)); // the last 8 steps, in order...
+  assert.deepEqual(after.slice(8, 16), after.slice(0, 8)); // ...repeating
+  assert.deepEqual(after.slice(32, 40), after.slice(0, 8));
+  assert.ok(new Set(before.slice(-8)).size > 1);
+});
