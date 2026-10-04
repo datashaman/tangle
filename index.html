@@ -10,10 +10,17 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; }
-  main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  main { max-width: 1400px; margin: 0 auto; padding: 16px; }
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
   h1 { font-size: 20px; margin: 0 8px 0 0; letter-spacing: .02em; }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
+  .layout { display: grid; gap: 16px; grid-template-columns: 1fr; align-items: start; }
+  @media (min-width: 900px) {
+    .layout { grid-template-columns: 1fr 340px; }
+    #side { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; } /* Space stays in view */
+  }
+  details { margin-top: 4px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
   .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
   section, .bar { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
@@ -49,6 +56,6 @@
 <main>
   <header><h1>tangle</h1><button id="go" class="primary" aria-pressed="false">start</button></header>
   <div class="bar" id="presets"></div>
-  <div class="grid" id="app"></div>
+  <div class="layout"><div class="grid" id="app"></div><aside id="side"></aside></div>
 </main>
 <script type="module" src="/src/main.ts"></script>

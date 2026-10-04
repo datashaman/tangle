@@ -15,9 +15,10 @@ const app = document.getElementById("app")!;
 const html = (s: string) => Object.assign(document.createElement("div"), { innerHTML: s }).firstElementChild as HTMLElement;
 const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(2));
 
-const section = (title: string) => {
+const side = document.getElementById("side")!;
+const section = (title: string, host: HTMLElement = app) => {
   const s = html(`<section><h2>${title}</h2></section>`);
-  app.append(s);
+  host.append(s);
   return s;
 };
 // Double-click a control (or a dropdown's label) to reset it to its default.
@@ -125,16 +126,18 @@ p.voices.forEach((v, i) => {
   select(s, "shape", SHAPES.map((n, k) => [String(k), n]), String(DEFAULTS.voices[i].shape), () => String(v.shape), (x) => (v.shape = +x));
   slider(s, "timbre", R.timbre, DEFAULTS.voices[i].timbre, () => v.timbre, (x) => (v.timbre = x));
   slider(s, "color", R.color, DEFAULTS.voices[i].color, () => v.color, (x) => (v.color = x));
-  slider(s, "azimuth (°)", R.az, DEFAULTS.voices[i].az, () => v.az, (x) => { v.az = x; updatePanners(); });
-  slider(s, "elevation (°)", R.el, DEFAULTS.voices[i].el, () => v.el, (x) => { v.el = x; updatePanners(); });
-  slider(s, "walk (° per note)", R.walk, DEFAULTS.voices[i].walk, () => v.walk, (x) => { v.walk = x; updatePanners(); });
-  slider(s, "swing (°)", R.swing, DEFAULTS.voices[i].swing, () => v.swing, (x) => { v.swing = x; updatePanners(); });
-  slider(s, "elevation swing (°)", R.swingEl, DEFAULTS.voices[i].swingEl, () => v.swingEl, (x) => { v.swingEl = x; updatePanners(); });
-  slider(s, "distance swing", R.swingDist, DEFAULTS.voices[i].swingDist, () => v.swingDist, (x) => { v.swingDist = x; updatePanners(); });
-  slider(s, "distance", R.dist, DEFAULTS.voices[i].dist, () => v.dist, (x) => { v.dist = x; updatePanners(); });
+  const more = html(`<details><summary>position &amp; motion</summary></details>`); // spatial controls, folded away
+  s.append(more);
+  slider(more, "azimuth (°)", R.az, DEFAULTS.voices[i].az, () => v.az, (x) => { v.az = x; updatePanners(); });
+  slider(more, "elevation (°)", R.el, DEFAULTS.voices[i].el, () => v.el, (x) => { v.el = x; updatePanners(); });
+  slider(more, "walk (° per note)", R.walk, DEFAULTS.voices[i].walk, () => v.walk, (x) => { v.walk = x; updatePanners(); });
+  slider(more, "swing (°)", R.swing, DEFAULTS.voices[i].swing, () => v.swing, (x) => { v.swing = x; updatePanners(); });
+  slider(more, "elevation swing (°)", R.swingEl, DEFAULTS.voices[i].swingEl, () => v.swingEl, (x) => { v.swingEl = x; updatePanners(); });
+  slider(more, "distance swing", R.swingDist, DEFAULTS.voices[i].swingDist, () => v.swingDist, (x) => { v.swingDist = x; updatePanners(); });
+  slider(more, "distance", R.dist, DEFAULTS.voices[i].dist, () => v.dist, (x) => { v.dist = x; updatePanners(); });
 });
 
-const space = section("Space");
+const space = section("Space", side);
 slider(space, "spatial déjà vu", R.spaceDejaVu, DEFAULTS.spaceDejaVu, () => p.spaceDejaVu, (v) => (p.spaceDejaVu = v));
 slider(space, "spatial length", R.spaceLength, DEFAULTS.spaceLength, () => p.spaceLength, (v) => (p.spaceLength = v));
 // Top-down pad: drag a voice around the listener. 10 svg units = 1 distance unit; front is up.
