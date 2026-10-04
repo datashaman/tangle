@@ -66,6 +66,7 @@ let sends: { d: GainNode; r: GainNode }[] = []; // per-voice delay and reverb se
 let master: GainNode | null = null;
 let grainNode: AudioWorkletNode | null = null; // granular voice; its output level is a separate gain
 let grainOut: GainNode | null = null;
+let grainHold = false; // runtime only, not part of presets: freezes the grain buffer
 // Effects: each voice goes dry to the master and, through its own send gains, into a shared tempo-synced delay and convolution reverb.
 type Fx = { delay: DelayNode; fb: GainNode; delayWet: GainNode; reverb: ConvolverNode; reverbWet: GainNode; irSize: number;
   driveDry: GainNode; driveWet: GainNode; chorusDry: GainNode; chorusWet: GainNode; lowpass: BiquadFilterNode; out: AudioNode }; // master chain: drive -> chorus -> filter
@@ -246,6 +247,7 @@ select(reverbCol, "size", REVERB_NAMES.map((n, i) => [String(i), n]), String(DEF
 const grainCard = section("Grains", pitchCol);
 grainCard.title = "A granular voice: grains cut from the last 4 seconds of what the voices played, one per pulse of the source voice";
 checkbox(grainCard, "on", () => p.grain.on, (v) => { p.grain.on = v; });
+checkbox(grainCard, "hold buffer", () => grainHold, (v) => { grainHold = v; grainNode?.port.postMessage({ hold: v }); });
 select(grainCard, "source", [["0", "voice 1"], ["1", "voice 2"], ["2", "voice 3"]], "0", () => String(p.grain.source), (v) => { p.grain.source = +v; });
 const grainSlider = (label: string, key: "size" | "scatter" | "follow" | "spread" | "level", spec: readonly [number, number, number], hint: string) =>
   slider(grainCard, label, spec, DEFAULTS.grain[key], () => p.grain[key], (v) => { p.grain[key] = v; if (key === "level") updateMix(); }, hint);
@@ -527,6 +529,7 @@ go.onclick = async () => {
   grainOut = new GainNode(ctx);
   grainNode.connect(grainOut).connect(master);
   panners.forEach((pn) => pn.connect(grainNode!)); // the grain buffer hears every voice, after level and position
+  grainNode.port.postMessage({ hold: grainHold });
   updatePanners();
   updateMix();
   updateFx();

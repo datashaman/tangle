@@ -11,9 +11,11 @@ class GrainProcessor extends AudioWorkletProcessor {
     this.n = Math.round(SECONDS * sampleRate);
     this.buf = [new Float32Array(this.n), new Float32Array(this.n)];
     this.w = 0; // write head
+    this.hold = false; // frozen: stop recording, so grains keep cutting the same 4 seconds
     this.q = []; // grain requests, sorted by time
     this.grains = [];
     this.port.onmessage = ({ data }) => {
+      if ("hold" in data) return void (this.hold = !!data.hold);
       this.q.push(data);
       this.q.sort((a, b) => a.time - b.time);
     };
@@ -33,9 +35,11 @@ class GrainProcessor extends AudioWorkletProcessor {
     for (let s = 0; s < outL.length; s++) {
       const t = (currentFrame + s) / sampleRate;
       while (this.q.length && this.q[0].time <= t) this.start(this.q.shift());
-      this.buf[0][this.w] = inL ? inL[s] : 0;
-      this.buf[1][this.w] = inR ? inR[s] : 0;
-      this.w = (this.w + 1) % n;
+      if (!this.hold) {
+        this.buf[0][this.w] = inL ? inL[s] : 0;
+        this.buf[1][this.w] = inR ? inR[s] : 0;
+        this.w = (this.w + 1) % n;
+      }
       let l = 0, r = 0;
       for (const g of this.grains) {
         if (g.i >= g.width) continue;
