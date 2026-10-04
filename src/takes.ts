@@ -1,6 +1,6 @@
 // Takes: grab what just played (retroactively), loop it exactly, save it. Times in a take are relative to its start.
 import type { Ev, Pattern } from "./sequencer.ts";
-import { GRAIN } from "./marbles.ts";
+import { SAMPLER } from "./marbles.ts";
 
 export type Take = { len: number; events: Ev[] }; // 0 <= event.time < len
 
@@ -40,7 +40,7 @@ export function sanitizeTake(raw: unknown): Take | null {
   for (const e of (r!.events as any[]).slice(0, MAX_EVENTS)) {
     const time = fin(e?.time, 0, len), pitch = fin(e?.pitch, 0, 127), dur = fin(e?.dur, 0, 64);
     if (time === null || pitch === null || dur === null) continue;
-    const ev: Ev = { time, pitch, dur, voice: Math.round(fin(e?.voice, 0, GRAIN) ?? 0) };
+    const ev: Ev = { time, pitch, dur, voice: Math.round(fin(e?.voice, 0, SAMPLER) ?? 0) };
     const az = fin(e?.pos?.az, -180, 180), el = fin(e?.pos?.el, -90, 90), dist = fin(e?.pos?.dist, 1, 10);
     if (az !== null && el !== null && dist !== null) ev.pos = { az, el, dist };
     if (e?.params && typeof e.params === "object") {

@@ -1,6 +1,6 @@
 // Defaults, valid ranges and (de)serialization for the whole parameter set. Anything loaded from a URL or storage is
 // untrusted: sanitize() rebuilds a fresh, clamped object, so e.g. step=0 can never reach the scheduler loop.
-import { CUSTOM, SCALES, maskOf, type GrainParams, type TModel, type TParams, type VoiceParams } from "./marbles.ts";
+import { CUSTOM, SCALES, maskOf, type GrainParams, type SamplerParams, type TModel, type TParams, type VoiceParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
 
 export const MODELS: TModel[] = ["bernoulli", "independent", "threeStates", "drums", "markov", "clusters", "divider"];
@@ -15,12 +15,14 @@ export const R = {
   delayMix: [0, 1, 0.01], delayTicks: [1, 8, 0.5], delayFeedback: [0, 0.9, 0.01], reverbMix: [0, 1, 0.01], reverbSize: [0, 3, 1],
   drive: [0, 1, 0.01], chorusMix: [0, 1, 0.01], filter: [0, 1, 0.01], filterRes: [0, 1, 0.01],
   source: [0, 2, 1], size: [0, 1, 0.01], scatter: [0, 1, 0.01], follow: [0, 1, 0.01], grainSpread: [0, 1, 0.01],
+  slice: [0, 1, 0.01],
   spaceDejaVu: [0, 1, 0.01], spaceLength: [1, 16, 1],
 } as const;
 
 export const DEFAULTS: TParams = {
   dejaVu: 0.5, length: 8, bias: 0.5, model: "bernoulli", step: 0.25, jitter: 0,
   scale: "minor pentatonic", root: 48, spread: 0.75, pitchBias: 0.5, seed: 1, mask: maskOf(SCALES["minor pentatonic"]), hrtf: true, volume: 0.8, delayMix: 0, delayTicks: 3, delayFeedback: 0.4, reverbMix: 0, reverbSize: 2, drive: 0, chorusMix: 0, filter: 1, filterRes: 0, // effects start off (filter fully open)
+  sampler: { on: false, source: 0, length: 0.5, scatter: 0.3, follow: 0.5, level: 0.8, delaySend: 0, reverbSend: 0 },
   grain: { on: false, source: 0, size: 0.5, scatter: 0.3, follow: 0.5, spread: 0.5, level: 0.8, delaySend: 0, reverbSend: 0 },
   spaceDejaVu: 0.5, spaceLength: 8, // pitch spread 0.75 / bias 0.5 = uniform pitches
   voices: [
@@ -48,6 +50,11 @@ export function sanitize(raw: unknown, base: TParams = DEFAULTS): TParams {
     scatter: num(g?.scatter, R.scatter, b.scatter), follow: num(g?.follow, R.follow, b.follow), spread: num(g?.spread, R.grainSpread, b.spread), level: num(g?.level, R.level, b.level),
     delaySend: num(g?.delaySend, R.send, b.delaySend), reverbSend: num(g?.reverbSend, R.send, b.reverbSend),
   });
+  const sampler = (g: any, b: SamplerParams): SamplerParams => ({
+    on: typeof g?.on === "boolean" ? g.on : b.on, source: Math.round(num(g?.source, R.source, b.source)), length: num(g?.length, R.slice, b.length),
+    scatter: num(g?.scatter, R.scatter, b.scatter), follow: num(g?.follow, R.follow, b.follow), level: num(g?.level, R.level, b.level),
+    delaySend: num(g?.delaySend, R.send, b.delaySend), reverbSend: num(g?.reverbSend, R.send, b.reverbSend),
+  });
   return {
     dejaVu: num(r.dejaVu, R.dejaVu, base.dejaVu), length: Math.round(num(r.length, R.length, base.length)),
     bias: num(r.bias, R.bias, base.bias), model: MODELS.includes(r.model) ? r.model : base.model,
@@ -62,7 +69,7 @@ export function sanitize(raw: unknown, base: TParams = DEFAULTS): TParams {
     drive: num(r.drive, R.drive, base.drive), chorusMix: num(r.chorusMix, R.chorusMix, base.chorusMix),
     filter: num(r.filter, R.filter, base.filter), filterRes: num(r.filterRes, R.filterRes, base.filterRes),
     spaceDejaVu: num(r.spaceDejaVu, R.spaceDejaVu, base.spaceDejaVu), spaceLength: Math.round(num(r.spaceLength, R.spaceLength, base.spaceLength)),
-    grain: grain(r.grain, base.grain),
+    grain: grain(r.grain, base.grain), sampler: sampler(r.sampler, base.sampler),
     voices: [0, 1, 2].map((i) => voice(r.voices?.[i], base.voices[i])) as TParams["voices"],
   };
 }
