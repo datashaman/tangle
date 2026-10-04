@@ -46,7 +46,7 @@ export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "ma
 export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean; az: number; el: number; dist: number; walk: number; swing: number; swingEl: number; swingDist: number; level: number; delaySend: number; reverbSend: number };
 // Granular voice ("voice 4"): grains cut from the last few seconds of what the voices played, one grain per pulse of
 // the `source` voice. Grain position and pan come from that voice's déjà vu spatial streams, pitch follows its melody.
-export type GrainParams = { on: boolean; source: number; size: number; scatter: number; follow: number; spread: number; level: number };
+export type GrainParams = { on: boolean; source: number; size: number; scatter: number; follow: number; spread: number; level: number; delaySend: number; reverbSend: number };
 export const GRAIN = 3; // Ev.voice index of the granular voice
 export const grainSecs = (size: number) => 0.02 * 25 ** size; // 0..1 -> 20 ms .. 0.5 s
 export type TCore = DejaVu & { bias: number; model: TModel };

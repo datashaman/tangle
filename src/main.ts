@@ -66,6 +66,7 @@ let sends: { d: GainNode; r: GainNode }[] = []; // per-voice delay and reverb se
 let master: GainNode | null = null;
 let grainNode: AudioWorkletNode | null = null; // granular voice; its output level is a separate gain
 let grainOut: GainNode | null = null;
+let grainSends: { d: GainNode; r: GainNode } | null = null; // granular voice into the delay and reverb
 let grainHold = false; // runtime only, not part of presets: freezes the grain buffer
 // Effects: each voice goes dry to the master and, through its own send gains, into a shared tempo-synced delay and convolution reverb.
 type Fx = { delay: DelayNode; fb: GainNode; delayWet: GainNode; reverb: ConvolverNode; reverbWet: GainNode; irSize: number;
@@ -86,7 +87,12 @@ const updateMix = () => {
     s.d.gain.setTargetAtTime(p.voices[i].delaySend, s.d.context.currentTime, 0.015);
     s.r.gain.setTargetAtTime(p.voices[i].reverbSend, s.r.context.currentTime, 0.015);
   });
-  if (grainOut) grainOut.gain.setTargetAtTime(p.grain.level, grainOut.context.currentTime, 0.015);
+  if (grainOut && grainSends) {
+    const now = grainOut.context.currentTime;
+    grainOut.gain.setTargetAtTime(p.grain.level, now, 0.015);
+    grainSends.d.gain.setTargetAtTime(p.grain.delaySend, now, 0.015);
+    grainSends.r.gain.setTargetAtTime(p.grain.reverbSend, now, 0.015);
+  }
   if (master) master.gain.setTargetAtTime(p.volume, master.context.currentTime, 0.015);
 };
 const updateFx = () => {
@@ -249,13 +255,15 @@ grainCard.title = "A granular voice: grains cut from the last 4 seconds of what 
 checkbox(grainCard, "on", () => p.grain.on, (v) => { p.grain.on = v; });
 checkbox(grainCard, "hold buffer", () => grainHold, (v) => { grainHold = v; grainNode?.port.postMessage({ hold: v }); });
 select(grainCard, "source", [["0", "voice 1"], ["1", "voice 2"], ["2", "voice 3"]], "0", () => String(p.grain.source), (v) => { p.grain.source = +v; });
-const grainSlider = (label: string, key: "size" | "scatter" | "follow" | "spread" | "level", spec: readonly [number, number, number], hint: string) =>
-  slider(grainCard, label, spec, DEFAULTS.grain[key], () => p.grain[key], (v) => { p.grain[key] = v; if (key === "level") updateMix(); }, hint);
+const grainSlider = (label: string, key: "size" | "scatter" | "follow" | "spread" | "level" | "delaySend" | "reverbSend", spec: readonly [number, number, number], hint: string) =>
+  slider(grainCard, label, spec, DEFAULTS.grain[key], () => p.grain[key], (v) => { p.grain[key] = v; if (key === "level" || key === "delaySend" || key === "reverbSend") updateMix(); }, hint);
 grainSlider("size", "size", R.size, "grain length, 20 ms to 0.5 s");
 grainSlider("scatter", "scatter", R.scatter, "how far back in the buffer grains start; follows the spatial déjà vu loop");
 grainSlider("follow", "follow", R.follow, "how much grain pitch follows the source melody");
 grainSlider("spread", "spread", R.grainSpread, "stereo scatter of grains");
 grainSlider("level", "level", R.level, "granular voice level");
+grainSlider("dly", "delaySend", R.send, "delay send");
+grainSlider("rev", "reverbSend", R.send, "reverb send");
 
 // --- takes: grab what just played (retroactively), loop it exactly, save it ---
 const played: Ev[] = []; // every event handed to a voice, in AudioContext time: the retroactive buffer
@@ -528,6 +536,9 @@ go.onclick = async () => {
   grainNode = new AudioWorkletNode(ctx, "grains", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
   grainOut = new GainNode(ctx);
   grainNode.connect(grainOut).connect(master);
+  grainSends = { d: new GainNode(ctx), r: new GainNode(ctx) }; // after level, like the voices' sends
+  grainOut.connect(grainSends.d).connect(delay);
+  grainOut.connect(grainSends.r).connect(reverb);
   panners.forEach((pn) => pn.connect(grainNode!)); // the grain buffer hears every voice, after level and position
   grainNode.port.postMessage({ hold: grainHold });
   updatePanners();
@@ -552,7 +563,7 @@ go.onclick = async () => {
       if (timers.length > 64) timers = timers.slice(-32); // old ones have fired long ago
     }
   });
-  stop = () => { stopRec(); takePlay = null; actx = null; played.length = 0; setTakeUi(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); grainNode = null; grainOut = null; panners = []; gains = []; sends = []; master = null; fx = null; live.fill(null); drawPad(); ctx.close(); };
+  stop = () => { stopRec(); takePlay = null; actx = null; played.length = 0; setTakeUi(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); grainNode = null; grainOut = null; grainSends = null; panners = []; gains = []; sends = []; master = null; fx = null; live.fill(null); drawPad(); ctx.close(); };
   go.textContent = "stop";
   go.setAttribute("aria-pressed", "true");
 };

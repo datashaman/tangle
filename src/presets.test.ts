@@ -8,7 +8,7 @@ test("preset survives a share-link round trip", () => {
   p.volume = 0.6;
   p.spaceDejaVu = 0.2; p.spaceLength = 5;
   p.hrtf = false;
-  p.grain = { on: true, source: 2, size: 0.8, scatter: 0.6, follow: 1, spread: 0.2, level: 0.5 };
+  p.grain = { on: true, source: 2, size: 0.8, scatter: 0.6, follow: 1, spread: 0.2, level: 0.5, delaySend: 0.3, reverbSend: 0.7 };
   assert.deepEqual(decode(encode(p)), p);
 });
 

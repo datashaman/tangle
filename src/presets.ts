@@ -21,7 +21,7 @@ export const R = {
 export const DEFAULTS: TParams = {
   dejaVu: 0.5, length: 8, bias: 0.5, model: "bernoulli", step: 0.25, jitter: 0,
   scale: "minor pentatonic", root: 48, spread: 0.75, pitchBias: 0.5, seed: 1, mask: maskOf(SCALES["minor pentatonic"]), hrtf: true, volume: 0.8, delayMix: 0, delayTicks: 3, delayFeedback: 0.4, reverbMix: 0, reverbSize: 2, drive: 0, chorusMix: 0, filter: 1, filterRes: 0, // effects start off (filter fully open)
-  grain: { on: false, source: 0, size: 0.5, scatter: 0.3, follow: 0.5, spread: 0.5, level: 0.8 },
+  grain: { on: false, source: 0, size: 0.5, scatter: 0.3, follow: 0.5, spread: 0.5, level: 0.8, delaySend: 0, reverbSend: 0 },
   spaceDejaVu: 0.5, spaceLength: 8, // pitch spread 0.75 / bias 0.5 = uniform pitches
   voices: [
     { shape: 0, timbre: 0.5, color: 0.5, on: true, az: -45, el: 0, dist: 1.5, walk: 0, swing: 0, swingEl: 0, swingDist: 0, level: 1, delaySend: 1, reverbSend: 1 },
@@ -46,6 +46,7 @@ export function sanitize(raw: unknown, base: TParams = DEFAULTS): TParams {
   const grain = (g: any, b: GrainParams): GrainParams => ({
     on: typeof g?.on === "boolean" ? g.on : b.on, source: Math.round(num(g?.source, R.source, b.source)), size: num(g?.size, R.size, b.size),
     scatter: num(g?.scatter, R.scatter, b.scatter), follow: num(g?.follow, R.follow, b.follow), spread: num(g?.spread, R.grainSpread, b.spread), level: num(g?.level, R.level, b.level),
+    delaySend: num(g?.delaySend, R.send, b.delaySend), reverbSend: num(g?.reverbSend, R.send, b.reverbSend),
   });
   return {
     dejaVu: num(r.dejaVu, R.dejaVu, base.dejaVu), length: Math.round(num(r.length, R.length, base.length)),

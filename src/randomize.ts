@@ -53,6 +53,8 @@ export function randomize(p: TParams, scope: "music" | "all", r: () => number = 
     n.grain.scatter = Math.round(r() * 100) / 100;
     n.grain.follow = pick([0, 0.5, 1], r);
     n.grain.spread = Math.round(r() * 100) / 100;
+    n.grain.delaySend = chance(0.5, r) ? Math.round(r() * 100) / 100 : 0;
+    n.grain.reverbSend = chance(0.5, r) ? Math.round(r() * 100) / 100 : 0;
     for (const v of n.voices) { // per-voice sends: a third of the time a voice stays dry, otherwise anywhere up to full
       v.delaySend = chance(0.3, r) ? 0 : Math.round(r() * 100) / 100;
       v.reverbSend = chance(0.3, r) ? 0 : Math.round(r() * 100) / 100;
