@@ -45,7 +45,7 @@ export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "ma
 // Braids shape/timbre/color (0..1), mute, and position (see space.ts). Only shape/timbre/color go to the oscillator.
 export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean; az: number; el: number; dist: number; walk: number; swing: number; swingEl: number; swingDist: number; level: number };
 export type TCore = DejaVu & { bias: number; model: TModel };
-export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; hrtf: boolean; volume: number; spaceDejaVu: number; spaceLength: number; voices: [VoiceParams, VoiceParams, VoiceParams] };
+export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; hrtf: boolean; volume: number; delayMix: number; delayTicks: number; delayFeedback: number; reverbMix: number; reverbSize: number; spaceDejaVu: number; spaceLength: number; voices: [VoiceParams, VoiceParams, VoiceParams] };
 
 export const DRUMS = [
   [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],

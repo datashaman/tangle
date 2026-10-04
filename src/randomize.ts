@@ -1,5 +1,5 @@
 // Randomize the configuration. "music" = clock, rhythm, pitch, space-loop and seed; "all" also re-rolls each voice's sound
-// and position. Never touches the mixer (levels, on/off, master) or the HRTF switch, so a roll can't mute a voice or blast
+// and position and the effects. Never touches the mixer (levels, on/off, master) or the HRTF switch, so a roll can't mute a voice or blast
 // the volume. Ranges are chosen to stay musical; the full ranges are still reachable by hand.
 import { SCALES, type TParams } from "./marbles.ts";
 import { MODELS, R } from "./presets.ts";
@@ -37,6 +37,12 @@ export function randomize(p: TParams, scope: "music" | "all", r: () => number = 
       v.swingEl = chance(0.2, r) ? Math.round(between(0, 40, r)) : 0;
       v.swingDist = chance(0.2, r) ? Math.round(between(0, 3, r) * 10) / 10 : 0;
     }
+    // effects: each is off half the time, and kept subtle when on
+    n.delayMix = chance(0.5, r) ? Math.round(between(0.05, 0.4, r) * 100) / 100 : 0;
+    n.delayTicks = pick([2, 3, 4, 6], r);
+    n.delayFeedback = Math.round(between(0.2, 0.6, r) * 100) / 100;
+    n.reverbMix = chance(0.5, r) ? Math.round(between(0.05, 0.35, r) * 100) / 100 : 0;
+    n.reverbSize = Math.floor(r() * 4);
   }
   return n;
 }
