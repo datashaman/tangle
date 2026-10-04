@@ -43,6 +43,10 @@ export function randomize(p: TParams, scope: "music" | "all", r: () => number = 
     n.delayFeedback = Math.round(between(0.2, 0.6, r) * 100) / 100;
     n.reverbMix = chance(0.5, r) ? Math.round(between(0.05, 0.35, r) * 100) / 100 : 0;
     n.reverbSize = Math.floor(r() * 4);
+    n.drive = chance(0.3, r) ? Math.round(between(0.1, 0.6, r) * 100) / 100 : 0;
+    n.chorusMix = chance(0.4, r) ? Math.round(between(0.2, 0.7, r) * 100) / 100 : 0;
+    n.filter = chance(0.5, r) ? Math.round(between(0.55, 0.95, r) * 100) / 100 : 1; // never closes enough to silence the mix
+    n.filterRes = n.filter < 1 ? Math.round(between(0, 0.6, r) * 100) / 100 : 0;
     for (const v of n.voices) { // per-voice sends: a third of the time a voice stays dry, otherwise anywhere up to full
       v.delaySend = chance(0.3, r) ? 0 : Math.round(r() * 100) / 100;
       v.reverbSend = chance(0.3, r) ? 0 : Math.round(r() * 100) / 100;

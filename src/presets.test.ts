@@ -73,10 +73,10 @@ test("mixer levels are clamped; defaults are unity per voice and 0.8 master", ()
 });
 
 test("effects settings round-trip, are clamped, and default to off", () => {
-  const p = { ...structuredClone(DEFAULTS), delayMix: 0.3, delayTicks: 4.5, delayFeedback: 0.55, reverbMix: 0.2, reverbSize: 3 };
+  const p = { ...structuredClone(DEFAULTS), delayMix: 0.3, delayTicks: 4.5, delayFeedback: 0.55, reverbMix: 0.2, reverbSize: 3, drive: 0.4, chorusMix: 0.3, filter: 0.6, filterRes: 0.2 };
   assert.deepEqual(decode(encode(p)), p);
-  const s = sanitize({ delayMix: 5, delayTicks: 0, delayFeedback: 2, reverbMix: -1, reverbSize: 9 });
-  assert.deepEqual([s.delayMix, s.delayTicks, s.delayFeedback, s.reverbMix, s.reverbSize], [1, 1, 0.9, 0, 3]);
+  const s = sanitize({ delayMix: 5, delayTicks: 0, delayFeedback: 2, reverbMix: -1, reverbSize: 9, drive: 7, filter: -3 });
+  assert.deepEqual([s.delayMix, s.delayTicks, s.delayFeedback, s.reverbMix, s.reverbSize, s.drive, s.filter], [1, 1, 0.9, 0, 3, 1, 0]);
   assert.deepEqual([DEFAULTS.delayMix, DEFAULTS.reverbMix], [0, 0]);
 });
 

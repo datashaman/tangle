@@ -13,12 +13,13 @@ export const R = {
   az: [-180, 180, 1], el: [-90, 90, 1], dist: [1, 10, 0.1], walk: [-90, 90, 1], swing: [0, 180, 1], swingEl: [0, 90, 1], swingDist: [0, 9, 0.1],
   level: [0, 1, 0.01], send: [0, 1, 0.01], volume: [0, 1, 0.01],
   delayMix: [0, 1, 0.01], delayTicks: [1, 8, 0.5], delayFeedback: [0, 0.9, 0.01], reverbMix: [0, 1, 0.01], reverbSize: [0, 3, 1],
+  drive: [0, 1, 0.01], chorusMix: [0, 1, 0.01], filter: [0, 1, 0.01], filterRes: [0, 1, 0.01],
   spaceDejaVu: [0, 1, 0.01], spaceLength: [1, 16, 1],
 } as const;
 
 export const DEFAULTS: TParams = {
   dejaVu: 0.5, length: 8, bias: 0.5, model: "bernoulli", step: 0.25, jitter: 0,
-  scale: "minor pentatonic", root: 48, spread: 0.75, pitchBias: 0.5, seed: 1, mask: maskOf(SCALES["minor pentatonic"]), hrtf: true, volume: 0.8, delayMix: 0, delayTicks: 3, delayFeedback: 0.4, reverbMix: 0, reverbSize: 2, // effects start off
+  scale: "minor pentatonic", root: 48, spread: 0.75, pitchBias: 0.5, seed: 1, mask: maskOf(SCALES["minor pentatonic"]), hrtf: true, volume: 0.8, delayMix: 0, delayTicks: 3, delayFeedback: 0.4, reverbMix: 0, reverbSize: 2, drive: 0, chorusMix: 0, filter: 1, filterRes: 0, // effects start off (filter fully open)
   spaceDejaVu: 0.5, spaceLength: 8, // pitch spread 0.75 / bias 0.5 = uniform pitches
   voices: [
     { shape: 0, timbre: 0.5, color: 0.5, on: true, az: -45, el: 0, dist: 1.5, walk: 0, swing: 0, swingEl: 0, swingDist: 0, level: 1, delaySend: 1, reverbSend: 1 },
@@ -51,6 +52,8 @@ export function sanitize(raw: unknown, base: TParams = DEFAULTS): TParams {
     delayMix: num(r.delayMix, R.delayMix, base.delayMix), delayTicks: num(r.delayTicks, R.delayTicks, base.delayTicks),
     delayFeedback: num(r.delayFeedback, R.delayFeedback, base.delayFeedback), reverbMix: num(r.reverbMix, R.reverbMix, base.reverbMix),
     reverbSize: Math.round(num(r.reverbSize, R.reverbSize, base.reverbSize)),
+    drive: num(r.drive, R.drive, base.drive), chorusMix: num(r.chorusMix, R.chorusMix, base.chorusMix),
+    filter: num(r.filter, R.filter, base.filter), filterRes: num(r.filterRes, R.filterRes, base.filterRes),
     spaceDejaVu: num(r.spaceDejaVu, R.spaceDejaVu, base.spaceDejaVu), spaceLength: Math.round(num(r.spaceLength, R.spaceLength, base.spaceLength)),
     voices: [0, 1, 2].map((i) => voice(r.voices?.[i], base.voices[i])) as TParams["voices"],
   };

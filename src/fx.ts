@@ -23,3 +23,14 @@ export const MAX_DELAY = 3.9; // seconds; the DelayNode is created with a 4 s ma
 
 // Delay time in seconds for a delay of `ticks` ticks at the current tick length.
 export const delaySeconds = (ticks: number, step: number) => Math.min(MAX_DELAY, Math.max(0.001, ticks * step));
+
+// Master filter: `x` 0..1 sweeps the lowpass cutoff exponentially from 20 Hz to 20 kHz (1 = wide open); `res` 0..1 is the resonance.
+export const filterHz = (x: number) => 20 * 1000 ** x;
+export const filterQ = (res: number) => 0.7 + res * res * 14;
+
+// Soft-clip curve for the drive stage: tanh saturation, scaled so small signals pass at about unity-and-a-half gain and peaks top out at 0.5.
+export const driveCurve = (n = 1024): Float32Array<ArrayBuffer> => {
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) c[i] = Math.tanh(3 * ((i / (n - 1)) * 2 - 1)) / 2;
+  return c;
+};

@@ -10,7 +10,7 @@ const seeded = (a: number) => () => { // mulberry32
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 const mixer = (p: typeof DEFAULTS) => [p.volume, p.hrtf, ...p.voices.flatMap((v) => [v.level, v.on])];
-const fx = (p: typeof DEFAULTS) => [p.delayMix, p.delayTicks, p.delayFeedback, p.reverbMix, p.reverbSize];
+const fx = (p: typeof DEFAULTS) => [p.delayMix, p.delayTicks, p.delayFeedback, p.reverbMix, p.reverbSize, p.drive, p.chorusMix, p.filter, p.filterRes];
 
 test("randomize music leaves voices and the mixer alone", () => {
   for (let s = 1; s <= 50; s++) {
