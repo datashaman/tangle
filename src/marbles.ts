@@ -44,7 +44,7 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
 export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov" | "clusters" | "divider";
 export type VoiceParams = { shape: number; timbre: number; color: number }; // Braids, timbre/color 0..1
 export type TCore = DejaVu & { bias: number; model: TModel };
-export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; voices: [VoiceParams, VoiceParams] };
+export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; voices: [VoiceParams, VoiceParams] };
 
 export const DRUMS = [
   [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],
@@ -174,6 +174,71 @@ const fastBeta = (u: number) => {
   return ICDF[i] + (ICDF[i + 1] - ICDF[i]) * (f - i);
 };
 
+// Marbles' X distribution (random/output_channel.cc + resources/lookup_tables.py): a beta distribution whose mean follows
+// `bias` and whose concentration follows `spread`. Marbles bilinearly interpolates precomputed inverse-CDF tables; we
+// interpolate the same (mu, nu) grid and evaluate the inverse CDF directly (same parameter mapping, no 19k-float table).
+// Below spread ~0.05 it collapses to `bias`; above ~0.95 it becomes a coin flip between the extremes.
+const MU = [0.05, 0.125, 0.25, 0.375, 0.5];
+const LOG2_NU = [9, 5, 3, 2.5, 2, 1.5, 1, 0.5, -1];
+
+function lgamma(x: number): number { // Lanczos
+  const c = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+  let y = x, t = x + 5.5;
+  t -= (x + 0.5) * Math.log(t);
+  let ser = 1.000000000190015;
+  for (const k of c) ser += k / ++y;
+  return -t + Math.log(2.5066282746310005 * ser / x);
+}
+
+function betaCdf(x: number, a: number, b: number): number { // regularized incomplete beta, continued fraction
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  const cf = (a: number, b: number, x: number) => {
+    let c = 1, d = 1 - (a + b) * x / (a + 1);
+    d = 1 / (Math.abs(d) < 1e-300 ? 1e-300 : d);
+    let h = d;
+    for (let m = 1; m <= 1000; m++) {
+      for (const aa of [m * (b - m) * x / ((a + 2 * m - 1) * (a + 2 * m)), -(a + m) * (a + b + m) * x / ((a + 2 * m) * (a + 2 * m + 1))]) {
+        d = 1 + aa * d; d = 1 / (Math.abs(d) < 1e-300 ? 1e-300 : d);
+        c = 1 + aa / c; if (Math.abs(c) < 1e-300) c = 1e-300;
+        const del = c * d; h *= del;
+        if (Math.abs(del - 1) < 1e-12) return h;
+      }
+    }
+    return h;
+  };
+  const bt = Math.exp(lgamma(a + b) - lgamma(a) - lgamma(b) + a * Math.log(x) + b * Math.log(1 - x));
+  return x < (a + 1) / (a + b + 2) ? bt * cf(a, b, x) / a : 1 - bt * cf(b, a, 1 - x) / b;
+}
+
+export function betaPpf(u: number, a: number, b: number): number {
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    if (betaCdf(mid, a, b) < u) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// u: uniform 0..1 -> value 0..1 (low..high note in the scale).
+export function xValue(u: number, spread: number, bias: number): number {
+  const degenerate = Math.min(1, Math.max(0, 1.25 - spread * 25));
+  const bernoulli = Math.min(1, Math.max(0, spread * 25 - 23.75));
+  const flip = bias > 0.5;
+  const uu = flip ? 1 - u : u, bb = flip ? 1 - bias : bias;
+  const bi = bb * 8, bf = bi - Math.min(3, Math.floor(bi)), bk = Math.min(3, Math.floor(bi));
+  const si = spread * 8, sk = Math.min(7, Math.floor(si)), sf = si - sk;
+  const mu = MU[bk] + (MU[bk + 1] - MU[bk]) * bf;
+  const nu = 2 ** (LOG2_NU[sk] + (LOG2_NU[sk + 1] - LOG2_NU[sk]) * sf);
+  const err = Math.exp(-((Math.log2(nu) - 1) ** 2) / 20);
+  const cmu = 0.5 * (2 * mu) ** (1 / (1 + 3 * err));
+  let y = betaPpf(Math.min(1 - 1e-9, Math.max(1e-9, uu)), cmu * nu, (1 - cmu) * nu);
+  if (flip) y = 1 - y;
+  let value = y + degenerate * (bias - y);
+  value += bernoulli * ((u >= 1 - bias ? 0.999999 : 0) - value);
+  return value;
+}
+
 // Scale degrees in semitones within one octave; the quantizer spans two octaves.
 // ponytail: fixed presets; Marbles' own quantizer has recordable scales and per-degree weights.
 export const SCALES: Record<string, number[]> = {
@@ -212,7 +277,7 @@ export const marbles = (p: TParams, seed = 1): Pattern => {
       const dt = p.step / mult; // length of this tick; pulses are placed by phase inside it
       const deg = SCALES[p.scale] ?? SCALES.chromatic;
       const notes = [...deg, ...deg.map((d) => d + 12)]; // two octaves
-      const degree = (v: number) => notes[Math.floor(v * notes.length)];
+      const degree = (v: number) => notes[Math.floor(xValue(v, p.spread, p.pitchBias) * notes.length)];
       for (const { ch, phase, period } of pulses) {
         out.push({ time: at + phase * dt, pitch: p.root + 12 * ch + degree(x[ch]()), dur: Math.min(1, period) * dt * 0.5, voice: ch, params: { ...p.voices[ch] } });
       }

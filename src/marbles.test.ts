@@ -49,7 +49,7 @@ test("t: dejaVu 0.5 loops the rhythm; markov is reproducible", () => {
 
 import { marbles } from "./marbles.ts";
 test("marbles: live step change keeps events ordered and windows contiguous", () => {
-  const p = { ...T("independent", 0.5), step: 0.25, jitter: 0, scale: "chromatic", root: 48, voices: [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any] };
+  const p = { ...T("independent", 0.5), step: 0.25, jitter: 0, scale: "chromatic", root: 48, spread: 0.75, pitchBias: 0.5, voices: [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any] };
   const pat = marbles(p, 1);
   const ev = [...pat(0, 1)];
   p.step = 0.1;
@@ -62,7 +62,7 @@ test("marbles: live step change keeps events ordered and windows contiguous", ()
 
 test("jitter 0 is an exact grid; jitter 1 wanders but stays near the straight clock", () => {
   const voices = [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any];
-  const times = (jitter: number) => marbles({ ...T("independent", 0), step: 0.25, jitter, scale: "chromatic", root: 48, voices }, 1)(0, 100).filter((e) => e.voice === 0).map((e) => e.time);
+  const times = (jitter: number) => marbles({ ...T("independent", 0), step: 0.25, jitter, scale: "chromatic", root: 48, spread: 0.75, pitchBias: 0.5, voices }, 1)(0, 100).filter((e) => e.voice === 0).map((e) => e.time);
   assert.deepEqual(times(0).slice(0, 5), [0, 0.25, 0.5, 0.75, 1]);
   const t = times(1), grid = t.map((_, i) => i * 0.25);
   assert.ok(t.some((x, i) => Math.abs(x - grid[i]) > 0.01), "no jitter happened");
@@ -94,11 +94,29 @@ test("t: divider bias 0 is 8:(1/8) over 8 ticks; centre is 1:1; clusters at cent
 import { SCALES } from "./marbles.ts";
 test("marbles: pitches stay inside the chosen scale and root", () => {
   const voices = [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any];
-  const base = { ...T("independent", 0.5, 0), step: 0.25, jitter: 0, voices };
+  const base = { ...T("independent", 0.5, 0), step: 0.25, jitter: 0, spread: 0.75, pitchBias: 0.5, voices };
   const pitches = (scale: string, root: number) => marbles({ ...base, scale, root }, 1)(0, 200).map((e) => e.pitch - e.voice! * 12);
   for (const [name, deg] of Object.entries(SCALES)) {
     const set = new Set([...deg, ...deg.map((d) => d + 12)].map((d) => 50 + d));
     assert.ok(pitches(name, 50).every((x) => set.has(x)), name);
   }
   assert.ok(new Set(pitches("major pentatonic", 60)).size > 5); // actually wanders across the scale
+});
+
+import { betaPpf, xValue } from "./marbles.ts";
+test("betaPpf matches known beta quantiles", () => {
+  assert.ok(Math.abs(betaPpf(0.3, 1, 1) - 0.3) < 1e-6);
+  assert.ok(Math.abs(betaPpf(0.5, 2, 2) - 0.5) < 1e-6);
+  assert.ok(Math.abs(betaPpf(0.5, 2, 5) - 0.26445) < 1e-4); // median of Beta(2,5)
+});
+
+test("xValue: spread 0.75/bias 0.5 is uniform; spread 0 pins to bias; spread 1 is a coin flip; bias moves the mean", () => {
+  const us = Array.from({ length: 99 }, (_, i) => (i + 1) / 100);
+  const mean = (s: number, b: number) => us.reduce((a, u) => a + xValue(u, s, b), 0) / us.length;
+  for (const u of us) assert.ok(Math.abs(xValue(u, 0.75, 0.5) - u) < 0.02, `uniform at ${u}`);
+  for (const u of us) assert.ok(Math.abs(xValue(u, 0, 0.3) - 0.3) < 1e-6);
+  assert.ok(us.every((u) => { const v = xValue(u, 1, 0.5); return v === 0 || v === 0.999999; }));
+  assert.ok(mean(0.5, 0.2) < 0.4 && mean(0.5, 0.8) > 0.6, "bias should move the mean");
+  const spreadOf = (s: number) => { const v = us.map((u) => xValue(u, s, 0.5)); const m = v.reduce((a, b) => a + b) / v.length; return v.reduce((a, b) => a + (b - m) ** 2, 0) / v.length; };
+  assert.ok(spreadOf(0.25) < spreadOf(0.5) && spreadOf(0.5) < spreadOf(0.9), "spread should widen the distribution");
 });

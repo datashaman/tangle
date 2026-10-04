@@ -6,14 +6,14 @@ import workletUrl from "./braids/worklet.js?url";
 import wasmUrl from "./braids/braids.wasm?url";
 
 const p: TParams = {
-  dejaVu: 0.5, length: 8, bias: 0.5, model: "bernoulli", step: 0.25, jitter: 0, scale: "minor pentatonic", root: 48,
+  dejaVu: 0.5, length: 8, bias: 0.5, model: "bernoulli", step: 0.25, jitter: 0, scale: "minor pentatonic", root: 48, spread: 0.75, pitchBias: 0.5,
   voices: [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }],
 };
-const bind = (id: string, k: "dejaVu" | "length" | "bias" | "step" | "jitter") => {
+const bind = (id: string, k: "dejaVu" | "length" | "bias" | "step" | "jitter" | "spread" | "pitchBias") => {
   const el = document.getElementById(id) as HTMLInputElement;
   el.oninput = () => (p[k] = +el.value);
 };
-bind("dv", "dejaVu"); bind("len", "length"); bind("bias", "bias"); bind("step", "step"); bind("jitter", "jitter");
+bind("dv", "dejaVu"); bind("len", "length"); bind("bias", "bias"); bind("step", "step"); bind("jitter", "jitter"); bind("spread", "spread"); bind("pbias", "pitchBias");
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const fill = (id: string, opts: string[], onpick: (i: number, name: string) => void) => {
   const el = document.getElementById(id) as HTMLSelectElement;
