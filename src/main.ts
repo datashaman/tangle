@@ -126,6 +126,8 @@ p.voices.forEach((v, i) => {
   slider(s, "elevation (°)", R.el, DEFAULTS.voices[i].el, () => v.el, (x) => { v.el = x; updatePanners(); });
   slider(s, "walk (° per note)", R.walk, DEFAULTS.voices[i].walk, () => v.walk, (x) => { v.walk = x; updatePanners(); });
   slider(s, "swing (°)", R.swing, DEFAULTS.voices[i].swing, () => v.swing, (x) => { v.swing = x; updatePanners(); });
+  slider(s, "elevation swing (°)", R.swingEl, DEFAULTS.voices[i].swingEl, () => v.swingEl, (x) => { v.swingEl = x; updatePanners(); });
+  slider(s, "distance swing", R.swingDist, DEFAULTS.voices[i].swingDist, () => v.swingDist, (x) => { v.swingDist = x; updatePanners(); });
   slider(s, "distance", R.dist, DEFAULTS.voices[i].dist, () => v.dist, (x) => { v.dist = x; updatePanners(); });
 });
 
@@ -243,8 +245,8 @@ go.onclick = async () => {
   const stopRun = run(marbles(p, (i) => held === i), () => ctx.currentTime, (e) => {
     const i = e.voice ?? 0;
     nodes[i].port.postMessage(e);
-    if (e.az !== undefined) { // sequenced motion: move the voice at the note's start time
-      const [x, y, z] = position(e.az, p.voices[i].el, p.voices[i].dist);
+    if (e.pos) { // sequenced motion: move the voice at the note's start time
+      const { az, el, dist } = e.pos, [x, y, z] = position(az, el, dist);
       panners[i].positionX.setValueAtTime(x, e.time); panners[i].positionY.setValueAtTime(y, e.time); panners[i].positionZ.setValueAtTime(z, e.time);
     }
   });

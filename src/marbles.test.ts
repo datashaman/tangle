@@ -155,20 +155,20 @@ test("custom scale: mask drives the notes; presets are equivalent masks; empty m
 });
 
 const motionParams = (over: any, dejaVu = 0.5, length = 4) => ({ ...T("independent", 0, dejaVu, length), step: 0.25, jitter: 0, scale: "chromatic", mask: 1, root: 48, spread: 0.75, pitchBias: 0.5,
-  voices: [{ shape: 0, timbre: 0.5, color: 0.5, on: true, az: 10, el: 0, dist: 2, walk: 0, swing: 0, ...over }, { shape: 3, timbre: 0.5, color: 0.5, on: false, az: 0, el: 0, dist: 2, walk: 0, swing: 0 }, { shape: 5, timbre: 0.5, color: 0.5, on: false, az: 0, el: 0, dist: 2, walk: 0, swing: 0 }] as [any, any, any] });
+  voices: [{ shape: 0, timbre: 0.5, color: 0.5, on: true, az: 10, el: 0, dist: 2, walk: 0, swing: 0, swingEl: 0, swingDist: 0, ...over }, { shape: 3, timbre: 0.5, color: 0.5, on: false, az: 0, el: 0, dist: 2, walk: 0, swing: 0, swingEl: 0, swingDist: 0 }, { shape: 5, timbre: 0.5, color: 0.5, on: false, az: 0, el: 0, dist: 2, walk: 0, swing: 0, swingEl: 0, swingDist: 0 }] as [any, any, any] });
 const v0 = (ev: any[]) => ev.filter((e) => e.voice === 0);
 
 test("motion: no walk or swing means no position events", () => {
-  assert.ok(v0(marbles(motionParams({}))(0, 5)).every((e) => e.az === undefined));
+  assert.ok(v0(marbles(motionParams({}))(0, 5)).every((e) => e.pos?.az === undefined));
 });
 
 test("motion: walk advances the azimuth per note and wraps", () => {
-  const az = v0(marbles(motionParams({ walk: 100 }))(0, 5)).map((e) => e.az);
+  const az = v0(marbles(motionParams({ walk: 100 }))(0, 5)).map((e) => e.pos?.az);
   assert.deepEqual(az.slice(0, 4), [110, -150, -50, 50]); // 10+100, 10+200 wraps to -150, ...
 });
 
 test("motion: swing stays within +-swing of the base, and deja vu 0.5 loops it", () => {
-  const az = v0(marbles(motionParams({ swing: 40 }, 0.5, 4))(0, 20)).map((e) => e.az);
+  const az = v0(marbles(motionParams({ swing: 40 }, 0.5, 4))(0, 20)).map((e) => e.pos?.az);
   assert.ok(az.every((a: number) => a >= 10 - 40 && a <= 10 + 40));
   assert.deepEqual(az.slice(0, 4), az.slice(4, 8));
   assert.ok(new Set(az.slice(0, 4)).size > 1);
@@ -177,10 +177,19 @@ test("motion: swing stays within +-swing of the base, and deja vu 0.5 loops it",
 test("motion: yields while held, then resumes from the start of the walk", () => {
   let held = false;
   const pat = marbles(motionParams({ walk: 30 }), () => held);
-  const first = v0(pat(0, 1.01)).map((e) => e.az); // 5 notes walking: 40, 70, 100, 130, 160
+  const first = v0(pat(0, 1.01)).map((e) => e.pos?.az); // 5 notes walking: 40, 70, 100, 130, 160
   assert.deepEqual(first, [40, 70, 100, 130, 160]);
   held = true;
-  assert.ok(v0(pat(1.01, 2.01)).every((e) => e.az === undefined));
+  assert.ok(v0(pat(1.01, 2.01)).every((e) => e.pos?.az === undefined));
   held = false;
-  assert.deepEqual(v0(pat(2.01, 2.6)).map((e) => e.az).slice(0, 2), [40, 70]); // restarts from the dropped base
+  assert.deepEqual(v0(pat(2.01, 2.6)).map((e) => e.pos?.az).slice(0, 2), [40, 70]); // restarts from the dropped base
+});
+
+test("motion: elevation and distance swing stay in range and clamp at the limits", () => {
+  const pos = (over: any) => v0(marbles(motionParams(over))(0, 30)).map((e) => e.pos);
+  const a = pos({ swingEl: 30, swingDist: 1 });
+  assert.ok(a.every((q: any) => Math.abs(q.el) <= 30 && q.dist >= 1 && q.dist <= 3));
+  assert.ok(new Set(a.map((q: any) => q.el)).size > 1 && new Set(a.map((q: any) => q.dist)).size > 1);
+  const b = pos({ el: 80, dist: 1, swingEl: 30, swingDist: 5 });
+  assert.ok(b.every((q: any) => q.el <= 90 && q.el >= 50 && q.dist >= 1 && q.dist <= 6));
 });

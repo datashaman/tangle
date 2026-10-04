@@ -4,7 +4,7 @@ import { DEFAULTS, decode, encode, sanitize } from "./presets.ts";
 
 test("preset survives a share-link round trip", () => {
   const p = { ...structuredClone(DEFAULTS), model: "drums" as const, scale: "blues", jitter: 0.4, root: 53, length: 5 };
-  p.voices[1] = { shape: 33, timbre: 0.1, color: 0.9, on: false, az: 120, el: -20, dist: 4, walk: -30, swing: 60 };
+  p.voices[1] = { shape: 33, timbre: 0.1, color: 0.9, on: false, az: 120, el: -20, dist: 4, walk: -30, swing: 60, swingEl: 15, swingDist: 2.5 };
   p.hrtf = false;
   assert.deepEqual(decode(encode(p)), p);
 });
@@ -56,4 +56,9 @@ test("motion params are clamped and default to off", () => {
   const s = sanitize({ voices: [{ walk: 999, swing: -5 }] });
   assert.deepEqual([s.voices[0].walk, s.voices[0].swing], [90, 0]);
   assert.ok(DEFAULTS.voices.every((v) => v.walk === 0 && v.swing === 0));
+});
+
+test("elevation/distance swing are clamped and default to off", () => {
+  const s = sanitize({ voices: [{ swingEl: 999, swingDist: -1 }] });
+  assert.deepEqual([s.voices[0].swingEl, s.voices[0].swingDist], [90, 0]);
 });

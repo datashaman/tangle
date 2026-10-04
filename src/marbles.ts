@@ -43,7 +43,7 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
 // Omitted: pulse-width randomness, external clock, reset.
 export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov" | "clusters" | "divider";
 // Braids shape/timbre/color (0..1), mute, and position (see space.ts). Only shape/timbre/color go to the oscillator.
-export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean; az: number; el: number; dist: number; walk: number; swing: number };
+export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean; az: number; el: number; dist: number; walk: number; swing: number; swingEl: number; swingDist: number };
 export type TCore = DejaVu & { bias: number; model: TModel };
 export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; hrtf: boolean; voices: [VoiceParams, VoiceParams, VoiceParams] };
 
@@ -275,14 +275,19 @@ export const scaleDegrees = (p: Pick<TParams, "scale" | "mask">) => {
 // Scale and root are read per note, so they can change live; a rate change takes effect from the next tick.
 const wrapAz = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
 
-// Spatial motion (per note, so it is part of the sequence): each note's azimuth = base + walk * (notes since the voice was
-// released) + swing * (2u - 1), with u from a per-voice déjà vu stream, so déjà vu loops the spatial pattern too.
-// `held(i)` is true while the user is dragging voice i: automation yields (no `az` on its events, walk restarts), and it
+// Spatial motion (per note, so it is part of the sequence): each note's position is the voice's base position plus
+//   azimuth   walk * (notes since the voice was released) + swing * (2u - 1)
+//   elevation swingEl * (2u - 1)       distance swingDist * (2u - 1)
+// with u drawn from per-voice déjà vu streams (same déjà vu/length as the rhythm), so déjà vu loops the spatial pattern too.
+// `held(i)` is true while the user is dragging voice i: automation yields (no `pos` on its events, walk restarts), and it
 // takes over again from wherever the voice was dropped.
 export const marbles = (p: TParams, held: (voice: number) => boolean = () => false): Pattern => {
   // Streams are rebuilt whenever p.seed changes, so reseeding works live.
   let seed = p.seed;
-  const build = () => ({ t: tStream(seed, p), x: [1, 2, 3].map((k) => dejaVuStream(seed + k, p)), hop: [4, 5, 6].map((k) => dejaVuStream(seed + k, p)) });
+  const build = () => ({
+    t: tStream(seed, p), x: [1, 2, 3].map((k) => dejaVuStream(seed + k, p)),
+    hop: [[4, 5, 6], [7, 8, 9], [10, 11, 12]].map((ks) => ks.map((k) => dejaVuStream(seed + k, p))), // [az, el, dist][voice]
+  });
   let { t, x, hop } = build();
   const walked = [0, 0, 0]; // notes played since each voice was last held
   let at: number | undefined; // next tick time; p.step may change live, so accumulate instead of i * step
@@ -304,12 +309,17 @@ export const marbles = (p: TParams, held: (voice: number) => boolean = () => fal
       const degree = (v: number) => notes[Math.floor(xValue(v, p.spread, p.pitchBias) * notes.length)];
       for (const { ch, phase, period } of pulses) {
         const pitch = p.root + OCTAVE[ch] + degree(x[ch]());
-        const { on, az: base, walk, swing, el: _el, dist: _dist, ...params } = p.voices[ch];
-        const u = hop[ch](); // always advance, like the pitch stream
+        const { on, az, el, dist, walk, swing, swingEl, swingDist, ...params } = p.voices[ch];
+        const [ua, ue, ud] = hop.map((h) => h[ch]()); // always advance, like the pitch stream
         if (held(ch)) walked[ch] = 0;
         if (!on) continue;
-        const az = !held(ch) && (walk || swing) ? wrapAz(base + walk * ++walked[ch] + swing * (2 * u - 1)) : undefined;
-        out.push({ time: at + phase * dt, pitch, dur: Math.min(1, period) * dt * 0.5, voice: ch, az, params });
+        const moves = !held(ch) && (walk || swing || swingEl || swingDist);
+        const pos = moves ? {
+          az: wrapAz(az + walk * ++walked[ch] + swing * (2 * ua - 1)),
+          el: Math.min(90, Math.max(-90, el + swingEl * (2 * ue - 1))),
+          dist: Math.min(10, Math.max(1, dist + swingDist * (2 * ud - 1))),
+        } : undefined;
+        out.push({ time: at + phase * dt, pitch, dur: Math.min(1, period) * dt * 0.5, voice: ch, pos, params });
       }
       at += dt;
     }
