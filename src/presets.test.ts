@@ -4,7 +4,7 @@ import { DEFAULTS, decode, encode, sanitize } from "./presets.ts";
 
 test("preset survives a share-link round trip", () => {
   const p = { ...structuredClone(DEFAULTS), model: "drums" as const, scale: "blues", jitter: 0.4, root: 53, length: 5 };
-  p.voices[1] = { shape: 33, timbre: 0.1, color: 0.9, on: false, az: 120, el: -20, dist: 4, walk: -30, swing: 60, swingEl: 15, swingDist: 2.5, level: 0.4 };
+  p.voices[1] = { shape: 33, timbre: 0.1, color: 0.9, on: false, az: 120, el: -20, dist: 4, walk: -30, swing: 60, swingEl: 15, swingDist: 2.5, level: 0.4, delaySend: 0.3, reverbSend: 0.6 };
   p.volume = 0.6;
   p.spaceDejaVu = 0.2; p.spaceLength = 5;
   p.hrtf = false;
@@ -78,4 +78,13 @@ test("effects settings round-trip, are clamped, and default to off", () => {
   const s = sanitize({ delayMix: 5, delayTicks: 0, delayFeedback: 2, reverbMix: -1, reverbSize: 9 });
   assert.deepEqual([s.delayMix, s.delayTicks, s.delayFeedback, s.reverbMix, s.reverbSize], [1, 1, 0.9, 0, 3]);
   assert.deepEqual([DEFAULTS.delayMix, DEFAULTS.reverbMix], [0, 0]);
+});
+
+test("per-voice sends default to full, round-trip, are clamped, and old links keep full sends", () => {
+  assert.ok(DEFAULTS.voices.every((v) => v.delaySend === 1 && v.reverbSend === 1));
+  const p = structuredClone(DEFAULTS);
+  p.voices[1].delaySend = 0.25; p.voices[2].reverbSend = 0;
+  assert.deepEqual(decode(encode(p)), p);
+  const s = sanitize({ voices: [{ delaySend: 9, reverbSend: -1 }] });
+  assert.deepEqual([s.voices[0].delaySend, s.voices[0].reverbSend, s.voices[1].delaySend], [1, 0, 1]);
 });

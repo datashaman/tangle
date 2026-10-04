@@ -46,3 +46,10 @@ test("randomize all re-rolls the effects, kept subtle, with each effect sometime
   assert.ok(rolls.some((n) => n.reverbMix > 0) && rolls.some((n) => n.reverbMix === 0));
   assert.ok(rolls.every((n) => n.delayMix <= 0.4 && n.reverbMix <= 0.35 && n.delayFeedback <= 0.6));
 });
+
+test("randomize all re-rolls the per-voice sends; music leaves them", () => {
+  const rolls = Array.from({ length: 60 }, (_, s) => randomize(DEFAULTS, "all", seeded(s + 1)));
+  const sends = rolls.flatMap((n) => n.voices.flatMap((v) => [v.delaySend, v.reverbSend]));
+  assert.ok(sends.some((x) => x === 0) && sends.some((x) => x > 0 && x < 1));
+  assert.ok(randomize(DEFAULTS, "music", seeded(1)).voices.every((v) => v.delaySend === 1 && v.reverbSend === 1));
+});
