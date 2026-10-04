@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { run, type Ev, type Pattern } from "./sequencer.ts";
 import { randomize } from "./randomize.ts";
-import { delaySeconds, impulse, REVERB_NAMES, REVERB_SECONDS } from "./fx.ts";
+import { delaySeconds, driveCurve, filterHz, filterQ, impulse, REVERB_NAMES, REVERB_SECONDS } from "./fx.ts";
 import { capture, sanitizeTake, takePattern, type Take } from "./takes.ts";
 import { CUSTOM, effectiveMask, marbles, SCALES, type TParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
@@ -64,7 +64,8 @@ let gains: GainNode[] = []; // per-voice level
 let sends: { d: GainNode; r: GainNode }[] = []; // per-voice delay and reverb sends, taken after level and position
 let master: GainNode | null = null;
 // Effects: each voice goes dry to the master and, through its own send gains, into a shared tempo-synced delay and convolution reverb.
-type Fx = { delay: DelayNode; fb: GainNode; delayWet: GainNode; reverb: ConvolverNode; reverbWet: GainNode; irSize: number };
+type Fx = { delay: DelayNode; fb: GainNode; delayWet: GainNode; reverb: ConvolverNode; reverbWet: GainNode; irSize: number;
+  driveDry: GainNode; driveWet: GainNode; chorusDry: GainNode; chorusWet: GainNode; lowpass: BiquadFilterNode; out: AudioNode }; // master chain: drive -> chorus -> filter
 let fx: Fx | null = null;
 let held = -1; // voice currently being dragged on the pad, or -1
 let drawPad = () => {}; // assigned once the pad exists
@@ -90,6 +91,12 @@ const updateFx = () => {
   fx.fb.gain.setTargetAtTime(p.delayFeedback, now, 0.02);
   fx.delay.delayTime.setTargetAtTime(delaySeconds(p.delayTicks, p.step), now, 0.05); // follows the tick length
   fx.reverbWet.gain.setTargetAtTime(p.reverbMix, now, 0.02);
+  fx.driveDry.gain.setTargetAtTime(1 - p.drive, now, 0.02);
+  fx.driveWet.gain.setTargetAtTime(p.drive, now, 0.02);
+  fx.chorusDry.gain.setTargetAtTime(1 - 0.5 * p.chorusMix, now, 0.02); // two wet taps + dry: keeps the level steady
+  fx.chorusWet.gain.setTargetAtTime(0.5 * p.chorusMix, now, 0.02);
+  fx.lowpass.frequency.setTargetAtTime(filterHz(p.filter), now, 0.02);
+  fx.lowpass.Q.setTargetAtTime(filterQ(p.filterRes), now, 0.02);
   if (fx.irSize !== p.reverbSize) { // new room: generate its impulse response
     const [l, r] = impulse(ctx.sampleRate, REVERB_SECONDS[p.reverbSize]);
     const buf = ctx.createBuffer(2, l.length, ctx.sampleRate);
@@ -215,15 +222,19 @@ p.voices.forEach((v, i) => {
 });
 
 const fxCard = section("Effects", wideCol);
-const fxGrid = html(`<div class="fxgrid"><div><h3>Delay</h3></div><div><h3>Reverb</h3></div></div>`);
+const fxGrid = html(`<div class="fxgrid"><div><h3>Delay</h3></div><div><h3>Reverb</h3></div><div><h3>Drive &amp; chorus</h3></div><div><h3>Filter</h3></div></div>`);
 fxCard.append(fxGrid);
-const [delayCol, reverbCol] = Array.from(fxGrid.children) as HTMLElement[];
-const fxSlider = (parent: HTMLElement, label: string, key: "delayMix" | "delayTicks" | "delayFeedback" | "reverbMix") =>
+const [delayCol, reverbCol, driveCol, filterCol] = Array.from(fxGrid.children) as HTMLElement[];
+const fxSlider = (parent: HTMLElement, label: string, key: "delayMix" | "delayTicks" | "delayFeedback" | "reverbMix" | "drive" | "chorusMix" | "filter" | "filterRes") =>
   slider(parent, label, R[key], DEFAULTS[key], () => p[key], (v) => { p[key] = v; updateFx(); });
 fxSlider(delayCol, "mix", "delayMix");
 fxSlider(delayCol, "time (ticks)", "delayTicks");
 fxSlider(delayCol, "feedback", "delayFeedback");
 fxSlider(reverbCol, "mix", "reverbMix");
+fxSlider(driveCol, "drive", "drive");
+fxSlider(driveCol, "chorus", "chorusMix");
+fxSlider(filterCol, "cutoff", "filter");
+fxSlider(filterCol, "resonance", "filterRes");
 select(reverbCol, "size", REVERB_NAMES.map((n, i) => [String(i), n]), String(DEFAULTS.reverbSize), () => String(p.reverbSize), (v) => { p.reverbSize = +v; updateFx(); });
 
 // --- takes: grab what just played (retroactively), loop it exactly, save it ---
@@ -420,7 +431,7 @@ const recBtn = document.getElementById("rec") as HTMLButtonElement;
 const stopRec = () => { if (rec && rec.state !== "inactive") rec.stop(); };
 recBtn.onclick = () => {
   if (rec && rec.state !== "inactive") return stopRec();
-  const m = master;
+  const m = fx?.out;
   if (!m) return say("press start first, then record");
   const dest = (m.context as AudioContext).createMediaStreamDestination();
   m.connect(dest);
@@ -459,14 +470,28 @@ go.onclick = async () => {
     return n;
   });
   master = new GainNode(ctx);
-  master.connect(ctx.destination);
+  // master chain: drive (parallel soft clip) -> chorus (two LFO-modulated short delays) -> lowpass -> speakers
+  const shaper = new WaveShaperNode(ctx, { curve: driveCurve(), oversample: "2x" });
+  const driveDry = new GainNode(ctx), driveWet = new GainNode(ctx, { gain: 0 }), driveSum = new GainNode(ctx);
+  master.connect(driveDry).connect(driveSum); master.connect(shaper).connect(driveWet).connect(driveSum);
+  const chorusWet = new GainNode(ctx, { gain: 0 }), chorusSum = new GainNode(ctx);
+  const chorusDry = new GainNode(ctx);
+  driveSum.connect(chorusDry).connect(chorusSum); driveSum.connect(chorusWet);
+  [[0.02, 0.5], [0.03, 0.73]].forEach(([base, hz]) => {
+    const d = new DelayNode(ctx, { delayTime: base, maxDelayTime: 0.1 }), depth = new GainNode(ctx, { gain: 0.004 });
+    const lfo = new OscillatorNode(ctx, { frequency: hz });
+    lfo.connect(depth).connect(d.delayTime); lfo.start();
+    chorusWet.connect(d).connect(chorusSum);
+  });
+  const lowpass = new BiquadFilterNode(ctx, { type: "lowpass", frequency: 20000 });
+  chorusSum.connect(lowpass).connect(ctx.destination);
   const delay = new DelayNode(ctx, { maxDelayTime: 4 });
   const tone = new BiquadFilterNode(ctx, { type: "lowpass", frequency: 3500 }); // darkens each repeat
   const fb = new GainNode(ctx), delayWet = new GainNode(ctx, { gain: 0 });
   delay.connect(tone); tone.connect(fb); fb.connect(delay); tone.connect(delayWet); delayWet.connect(master);
   const reverb = new ConvolverNode(ctx), reverbWet = new GainNode(ctx, { gain: 0 });
   reverb.connect(reverbWet); reverbWet.connect(master);
-  fx = { delay, fb, delayWet, reverb, reverbWet, irSize: -1 };
+  fx = { delay, fb, delayWet, reverb, reverbWet, irSize: -1, driveDry, driveWet, chorusDry, chorusWet, lowpass, out: lowpass };
   gains = nodes.map(() => new GainNode(ctx));
   panners = nodes.map((n, i) => {
     const pn = new PannerNode(ctx, { distanceModel: "inverse", refDistance: 1 });
