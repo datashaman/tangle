@@ -3,6 +3,7 @@ import { run } from "./sequencer.ts";
 import { CUSTOM, effectiveMask, marbles, SCALES, type TParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
 import { DEFAULTS, MODELS, R, decode, encode, sanitize } from "./presets.ts";
+import { position } from "./space.ts";
 import workletUrl from "./braids/worklet.js?url";
 import wasmUrl from "./braids/braids.wasm?url";
 
@@ -41,6 +42,22 @@ const select = (parent: HTMLElement, label: string, options: [string, string][],
   sync.push(show); show();
   parent.append(l);
 };
+
+const checkbox = (parent: HTMLElement, label: string, get: () => boolean, set: (v: boolean) => void) => {
+  const l = html(`<label><input type="checkbox"> ${label}</label>`);
+  const box = l.querySelector("input")!;
+  box.onchange = () => set(box.checked);
+  sync.push(() => (box.checked = get())); box.checked = get();
+  parent.append(l);
+};
+
+// Spatial placement: one PannerNode per voice, created when audio starts; controls call updatePanners() to move them live.
+let panners: PannerNode[] = [];
+const updatePanners = () => panners.forEach((pn, i) => {
+  const [x, y, z] = position(p.voices[i].az, p.voices[i].el, p.voices[i].dist);
+  pn.positionX.value = x; pn.positionY.value = y; pn.positionZ.value = z;
+  pn.panningModel = p.hrtf ? "HRTF" : "equalpower";
+});
 
 const clock = section("Clock");
 slider(clock, "tick length (s)", R.step, DEFAULTS.step, () => p.step, (v) => (p.step = v));
@@ -99,15 +116,17 @@ slider(pitch, "bias", R.pitchBias, DEFAULTS.pitchBias, () => p.pitchBias, (v) =>
 
 p.voices.forEach((v, i) => {
   const s = section(i === 2 ? "Voice 3 · every tick" : `Voice ${i + 1}`);
-  const on = html(`<label><input type="checkbox"> on</label>`);
-  const box = on.querySelector("input")!;
-  box.onchange = () => (v.on = box.checked);
-  sync.push(() => (box.checked = v.on)); box.checked = v.on;
-  s.append(on);
+  checkbox(s, "on", () => v.on, (x) => (v.on = x));
   select(s, "shape", SHAPES.map((n, k) => [String(k), n]), String(DEFAULTS.voices[i].shape), () => String(v.shape), (x) => (v.shape = +x));
   slider(s, "timbre", R.timbre, DEFAULTS.voices[i].timbre, () => v.timbre, (x) => (v.timbre = x));
   slider(s, "color", R.color, DEFAULTS.voices[i].color, () => v.color, (x) => (v.color = x));
+  slider(s, "azimuth (°)", R.az, DEFAULTS.voices[i].az, () => v.az, (x) => { v.az = x; updatePanners(); });
+  slider(s, "elevation (°)", R.el, DEFAULTS.voices[i].el, () => v.el, (x) => { v.el = x; updatePanners(); });
+  slider(s, "distance", R.dist, DEFAULTS.voices[i].dist, () => v.dist, (x) => { v.dist = x; updatePanners(); });
 });
+
+const space = section("Space");
+checkbox(space, "HRTF (3D, use headphones; off = plain stereo pan)", () => p.hrtf, (v) => { p.hrtf = v; updatePanners(); });
 
 // --- presets: saved in localStorage, shared as a URL hash ---
 const KEY = "tangle.presets";
@@ -120,6 +139,7 @@ const apply = (next: TParams) => {
   Object.assign(p, rest);
   p.voices.forEach((v, i) => Object.assign(v, voices[i]));
   sync.forEach((f) => f());
+  updatePanners();
 };
 
 const bar = document.getElementById("presets")!;
@@ -173,12 +193,17 @@ go.onclick = async () => {
   // One worklet node (own wasm instance) per voice.
   const nodes = [0, 1, 2].map(() => {
     const n = new AudioWorkletNode(ctx, "braids", { processorOptions: { wasm } });
-    n.connect(ctx.destination);
     return n;
   });
+  panners = nodes.map((n) => {
+    const pn = new PannerNode(ctx, { distanceModel: "inverse", refDistance: 1 });
+    n.connect(pn).connect(ctx.destination);
+    return pn;
+  });
+  updatePanners();
   await ctx.resume();
   const stopRun = run(marbles(p), () => ctx.currentTime, (e) => nodes[e.voice ?? 0].port.postMessage(e));
-  stop = () => { stopRun(); nodes.forEach((n) => n.disconnect()); ctx.close(); };
+  stop = () => { stopRun(); nodes.forEach((n) => n.disconnect()); panners = []; ctx.close(); };
   go.textContent = "stop";
   go.setAttribute("aria-pressed", "true");
 };

@@ -42,9 +42,10 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
 // phase (0..1) within the tick; clusters/divider make real polyrhythms, the other models only fire on the tick (phase 0).
 // Omitted: pulse-width randomness, external clock, reset.
 export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov" | "clusters" | "divider";
-export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean }; // Braids, timbre/color 0..1
+// Braids shape/timbre/color (0..1), mute, and position (see space.ts). Only shape/timbre/color go to the oscillator.
+export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean; az: number; el: number; dist: number };
 export type TCore = DejaVu & { bias: number; model: TModel };
-export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; voices: [VoiceParams, VoiceParams, VoiceParams] };
+export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; hrtf: boolean; voices: [VoiceParams, VoiceParams, VoiceParams] };
 
 export const DRUMS = [
   [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],
@@ -296,7 +297,7 @@ export const marbles = (p: TParams): Pattern => {
       const degree = (v: number) => notes[Math.floor(xValue(v, p.spread, p.pitchBias) * notes.length)];
       for (const { ch, phase, period } of pulses) {
         const pitch = p.root + OCTAVE[ch] + degree(x[ch]());
-        const { on, ...params } = p.voices[ch];
+        const { on, az: _az, el: _el, dist: _dist, ...params } = p.voices[ch];
         if (on) out.push({ time: at + phase * dt, pitch, dur: Math.min(1, period) * dt * 0.5, voice: ch, params });
       }
       at += dt;

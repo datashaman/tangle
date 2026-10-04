@@ -4,7 +4,8 @@ import { DEFAULTS, decode, encode, sanitize } from "./presets.ts";
 
 test("preset survives a share-link round trip", () => {
   const p = { ...structuredClone(DEFAULTS), model: "drums" as const, scale: "blues", jitter: 0.4, root: 53, length: 5 };
-  p.voices[1] = { shape: 33, timbre: 0.1, color: 0.9, on: false };
+  p.voices[1] = { shape: 33, timbre: 0.1, color: 0.9, on: false, az: 120, el: -20, dist: 4 };
+  p.hrtf = false;
   assert.deepEqual(decode(encode(p)), p);
 });
 
@@ -42,4 +43,11 @@ test("custom scale name and mask are accepted and clamped", () => {
   assert.equal(s.mask, 5);
   assert.equal(sanitize({ mask: 0 }).mask, 1);
   assert.equal(sanitize({ mask: 1e9 }).mask, 4095);
+});
+
+test("spatial params are clamped; old presets get default positions", () => {
+  const s = sanitize({ voices: [{ az: 999, el: -999, dist: 0 }] });
+  assert.deepEqual([s.voices[0].az, s.voices[0].el, s.voices[0].dist], [180, -90, 1]);
+  assert.equal(s.voices[1].az, DEFAULTS.voices[1].az);
+  assert.equal(s.hrtf, true);
 });
