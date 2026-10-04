@@ -19,44 +19,51 @@ const section = (title: string) => {
   app.append(s);
   return s;
 };
-const slider = (parent: HTMLElement, label: string, [min, max, step]: readonly number[], get: () => number, set: (v: number) => void) => {
+// Double-click a control (or a dropdown's label) to reset it to its default.
+const slider = (parent: HTMLElement, label: string, [min, max, step]: readonly number[], def: number, get: () => number, set: (v: number) => void) => {
   const l = html(`<label><span>${label} <output></output></span><input type="range" min="${min}" max="${max}" step="${step}"></label>`);
   const input = l.querySelector("input")!, out = l.querySelector("output")!;
   const show = () => { input.value = String(get()); out.textContent = fmt(get()); };
   input.oninput = () => { set(+input.value); out.textContent = fmt(get()); };
+  l.title = "double-click to reset";
+  l.ondblclick = () => { set(def); show(); };
   sync.push(show); show();
   parent.append(l);
 };
-const select = (parent: HTMLElement, label: string, options: [string, string][], get: () => string, set: (v: string) => void) => {
+const select = (parent: HTMLElement, label: string, options: [string, string][], def: string, get: () => string, set: (v: string) => void) => {
   const l = html(`<label><span>${label}</span><select>${options.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select></label>`);
   const sel = l.querySelector("select")!;
   sel.onchange = () => set(sel.value);
-  sync.push(() => (sel.value = get())); sel.value = get();
+  const show = () => (sel.value = get());
+  const name = l.querySelector("span")!;
+  name.title = "double-click to reset";
+  name.ondblclick = () => { set(def); show(); };
+  sync.push(show); show();
   parent.append(l);
 };
 
 const clock = section("Clock");
-slider(clock, "tick length (s)", R.step, () => p.step, (v) => (p.step = v));
-slider(clock, "jitter", R.jitter, () => p.jitter, (v) => (p.jitter = v));
+slider(clock, "tick length (s)", R.step, DEFAULTS.step, () => p.step, (v) => (p.step = v));
+slider(clock, "jitter", R.jitter, DEFAULTS.jitter, () => p.jitter, (v) => (p.jitter = v));
 
 const rhythm = section("Rhythm");
-select(rhythm, "model", MODELS.map((m) => [m, m]), () => p.model, (v) => (p.model = v as TParams["model"]));
-slider(rhythm, "bias", R.bias, () => p.bias, (v) => (p.bias = v));
-slider(rhythm, "déjà vu", R.dejaVu, () => p.dejaVu, (v) => (p.dejaVu = v));
-slider(rhythm, "length", R.length, () => p.length, (v) => (p.length = v));
+select(rhythm, "model", MODELS.map((m) => [m, m]), DEFAULTS.model, () => p.model, (v) => (p.model = v as TParams["model"]));
+slider(rhythm, "bias", R.bias, DEFAULTS.bias, () => p.bias, (v) => (p.bias = v));
+slider(rhythm, "déjà vu", R.dejaVu, DEFAULTS.dejaVu, () => p.dejaVu, (v) => (p.dejaVu = v));
+slider(rhythm, "length", R.length, DEFAULTS.length, () => p.length, (v) => (p.length = v));
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const pitch = section("Pitch");
-select(pitch, "root", NOTES.map((n, i) => [String(48 + i), n]), () => String(p.root), (v) => (p.root = +v));
-select(pitch, "scale", Object.keys(SCALES).map((s) => [s, s]), () => p.scale, (v) => (p.scale = v));
-slider(pitch, "spread", R.spread, () => p.spread, (v) => (p.spread = v));
-slider(pitch, "bias", R.pitchBias, () => p.pitchBias, (v) => (p.pitchBias = v));
+select(pitch, "root", NOTES.map((n, i) => [String(48 + i), n]), String(DEFAULTS.root), () => String(p.root), (v) => (p.root = +v));
+select(pitch, "scale", Object.keys(SCALES).map((s) => [s, s]), DEFAULTS.scale, () => p.scale, (v) => (p.scale = v));
+slider(pitch, "spread", R.spread, DEFAULTS.spread, () => p.spread, (v) => (p.spread = v));
+slider(pitch, "bias", R.pitchBias, DEFAULTS.pitchBias, () => p.pitchBias, (v) => (p.pitchBias = v));
 
 p.voices.forEach((v, i) => {
   const s = section(`Voice ${i + 1}`);
-  select(s, "shape", SHAPES.map((n, k) => [String(k), n]), () => String(v.shape), (x) => (v.shape = +x));
-  slider(s, "timbre", R.timbre, () => v.timbre, (x) => (v.timbre = x));
-  slider(s, "color", R.color, () => v.color, (x) => (v.color = x));
+  select(s, "shape", SHAPES.map((n, k) => [String(k), n]), String(DEFAULTS.voices[i].shape), () => String(v.shape), (x) => (v.shape = +x));
+  slider(s, "timbre", R.timbre, DEFAULTS.voices[i].timbre, () => v.timbre, (x) => (v.timbre = x));
+  slider(s, "color", R.color, DEFAULTS.voices[i].color, () => v.color, (x) => (v.color = x));
 });
 
 // --- presets: saved in localStorage, shared as a URL hash ---
