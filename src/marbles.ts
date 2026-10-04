@@ -43,9 +43,9 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
 // Omitted: pulse-width randomness, external clock, reset.
 export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov" | "clusters" | "divider";
 // Braids shape/timbre/color (0..1), mute, and position (see space.ts). Only shape/timbre/color go to the oscillator.
-export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean; az: number; el: number; dist: number; walk: number; swing: number; swingEl: number; swingDist: number };
+export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean; az: number; el: number; dist: number; walk: number; swing: number; swingEl: number; swingDist: number; level: number };
 export type TCore = DejaVu & { bias: number; model: TModel };
-export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; hrtf: boolean; spaceDejaVu: number; spaceLength: number; voices: [VoiceParams, VoiceParams, VoiceParams] };
+export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; hrtf: boolean; volume: number; spaceDejaVu: number; spaceLength: number; voices: [VoiceParams, VoiceParams, VoiceParams] };
 
 export const DRUMS = [
   [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],
@@ -311,7 +311,7 @@ export const marbles = (p: TParams, held: (voice: number) => boolean = () => fal
       const degree = (v: number) => notes[Math.floor(xValue(v, p.spread, p.pitchBias) * notes.length)];
       for (const { ch, phase, period } of pulses) {
         const pitch = p.root + OCTAVE[ch] + degree(x[ch]());
-        const { on, az, el, dist, walk, swing, swingEl, swingDist, ...params } = p.voices[ch];
+        const { on, az, el, dist, walk, swing, swingEl, swingDist, level: _level, ...params } = p.voices[ch];
         const [ua, ue, ud] = hop.map((h) => h[ch]()); // always advance, like the pitch stream
         if (held(ch)) walked[ch] = 0;
         if (!on) continue;

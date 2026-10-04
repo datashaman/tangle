@@ -4,7 +4,8 @@ import { DEFAULTS, decode, encode, sanitize } from "./presets.ts";
 
 test("preset survives a share-link round trip", () => {
   const p = { ...structuredClone(DEFAULTS), model: "drums" as const, scale: "blues", jitter: 0.4, root: 53, length: 5 };
-  p.voices[1] = { shape: 33, timbre: 0.1, color: 0.9, on: false, az: 120, el: -20, dist: 4, walk: -30, swing: 60, swingEl: 15, swingDist: 2.5 };
+  p.voices[1] = { shape: 33, timbre: 0.1, color: 0.9, on: false, az: 120, el: -20, dist: 4, walk: -30, swing: 60, swingEl: 15, swingDist: 2.5, level: 0.4 };
+  p.volume = 0.6;
   p.spaceDejaVu = 0.2; p.spaceLength = 5;
   p.hrtf = false;
   assert.deepEqual(decode(encode(p)), p);
@@ -63,4 +64,10 @@ test("spatial motion extras: clamped, default off, space deja vu defaults match 
   const s = sanitize({ spaceDejaVu: 9, spaceLength: 0, voices: [{ swingEl: 999, swingDist: -1 }] });
   assert.deepEqual([s.spaceDejaVu, s.spaceLength, s.voices[0].swingEl, s.voices[0].swingDist], [1, 1, 90, 0]);
   assert.deepEqual([DEFAULTS.spaceDejaVu, DEFAULTS.spaceLength], [0.5, 8]);
+});
+
+test("mixer levels are clamped; defaults are unity per voice and 0.8 master", () => {
+  const s = sanitize({ volume: 5, voices: [{ level: -1 }, { level: 0.25 }] });
+  assert.deepEqual([s.volume, s.voices[0].level, s.voices[1].level, s.voices[2].level], [1, 0, 0.25, 1]);
+  assert.equal(DEFAULTS.volume, 0.8);
 });

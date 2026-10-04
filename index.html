@@ -19,6 +19,12 @@
     .layout { grid-template-columns: 1fr 340px; }
     #side { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; } /* Space stays in view */
   }
+  .mixer { display: flex; justify-content: space-around; gap: 8px; }
+  .chan { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .chan label { margin-bottom: 0; }
+  .chan label.ch { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .chan label.ch span { display: block; text-align: center; }
+  .chan input[type=range] { writing-mode: vertical-lr; direction: rtl; width: 28px; height: 120px; margin: 0; }
   details { margin-top: 4px; }
   summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
   .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }

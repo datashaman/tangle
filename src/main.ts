@@ -57,6 +57,8 @@ let panners: PannerNode[] = [];
 // Where each voice actually is right now (after sequenced motion); null when it isn't moving.
 const live: ({ az: number; dist: number } | null)[] = [null, null, null];
 let timers: number[] = [];
+let gains: GainNode[] = []; // per-voice level, then the master
+let master: GainNode | null = null;
 let held = -1; // voice currently being dragged on the pad, or -1
 let drawPad = () => {}; // assigned once the pad exists
 const updatePanners = () => { live.fill(null); drawPad(); panners.forEach((pn, i) => {
@@ -64,6 +66,30 @@ const updatePanners = () => { live.fill(null); drawPad(); panners.forEach((pn, i
   pn.positionX.value = x; pn.positionY.value = y; pn.positionZ.value = z;
   pn.panningModel = p.hrtf ? "HRTF" : "equalpower";
 }); };
+
+// Mixer: vertical faders. Levels are smoothed gain changes so dragging doesn't click.
+const updateMix = () => {
+  gains.forEach((g, i) => g.gain.setTargetAtTime(p.voices[i].level, g.context.currentTime, 0.015));
+  if (master) master.gain.setTargetAtTime(p.volume, master.context.currentTime, 0.015);
+};
+const fader = (parent: HTMLElement, label: string, [min, max, step]: readonly number[], def: number, get: () => number, set: (v: number) => void) => {
+  const chan = html(`<div class="chan"><label class="ch" title="double-click to reset"><output></output><input type="range" min="${min}" max="${max}" step="${step}" aria-label="${label} level"><span>${label}</span></label></div>`);
+  const input = chan.querySelector("input")!, out = chan.querySelector("output")!;
+  const show = () => { input.value = String(get()); out.textContent = fmt(get()); };
+  input.oninput = () => { set(+input.value); out.textContent = fmt(get()); updateMix(); };
+  chan.querySelector("label")!.ondblclick = () => { set(def); show(); updateMix(); };
+  sync.push(show); show();
+  parent.append(chan);
+  return chan;
+};
+const mixer = section("Mixer");
+const strip = html(`<div class="mixer"></div>`);
+mixer.append(strip);
+p.voices.forEach((v, i) => {
+  const chan = fader(strip, `voice ${i + 1}`, R.level, DEFAULTS.voices[i].level, () => v.level, (x) => (v.level = x));
+  checkbox(chan, "on", () => v.on, (x) => { v.on = x; drawPad(); });
+});
+fader(strip, "master", R.volume, DEFAULTS.volume, () => p.volume, (x) => (p.volume = x));
 
 const clock = section("Clock");
 slider(clock, "tick length (s)", R.step, DEFAULTS.step, () => p.step, (v) => (p.step = v));
@@ -122,7 +148,6 @@ slider(pitch, "bias", R.pitchBias, DEFAULTS.pitchBias, () => p.pitchBias, (v) =>
 
 p.voices.forEach((v, i) => {
   const s = section(i === 2 ? "Voice 3 · every tick" : `Voice ${i + 1}`);
-  checkbox(s, "on", () => v.on, (x) => { v.on = x; drawPad(); });
   select(s, "shape", SHAPES.map((n, k) => [String(k), n]), String(DEFAULTS.voices[i].shape), () => String(v.shape), (x) => (v.shape = +x));
   slider(s, "timbre", R.timbre, DEFAULTS.voices[i].timbre, () => v.timbre, (x) => (v.timbre = x));
   slider(s, "color", R.color, DEFAULTS.voices[i].color, () => v.color, (x) => (v.color = x));
@@ -192,6 +217,7 @@ const apply = (next: TParams) => {
   p.voices.forEach((v, i) => Object.assign(v, voices[i]));
   sync.forEach((f) => f());
   updatePanners();
+  updateMix();
 };
 
 const bar = document.getElementById("presets")!;
@@ -247,12 +273,16 @@ go.onclick = async () => {
     const n = new AudioWorkletNode(ctx, "braids", { processorOptions: { wasm } });
     return n;
   });
-  panners = nodes.map((n) => {
+  master = new GainNode(ctx);
+  master.connect(ctx.destination);
+  gains = nodes.map(() => new GainNode(ctx));
+  panners = nodes.map((n, i) => {
     const pn = new PannerNode(ctx, { distanceModel: "inverse", refDistance: 1 });
-    n.connect(pn).connect(ctx.destination);
+    n.connect(gains[i]).connect(pn).connect(master!);
     return pn;
   });
   updatePanners();
+  updateMix();
   await ctx.resume();
   const stopRun = run(marbles(p, (i) => held === i), () => ctx.currentTime, (e) => {
     const i = e.voice ?? 0;
@@ -264,7 +294,7 @@ go.onclick = async () => {
       if (timers.length > 64) timers = timers.slice(-32); // old ones have fired long ago
     }
   });
-  stop = () => { stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); panners = []; live.fill(null); drawPad(); ctx.close(); };
+  stop = () => { stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); panners = []; gains = []; master = null; live.fill(null); drawPad(); ctx.close(); };
   go.textContent = "stop";
   go.setAttribute("aria-pressed", "true");
 };

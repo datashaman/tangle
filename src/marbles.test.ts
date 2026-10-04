@@ -23,7 +23,7 @@ test("dejaVu 1 only reorders: values come from the existing loop", () => {
 
 import { tStream as tStreamFull, DRUMS, type TModel, type TCore } from "./marbles.ts";
 const tStream = (seed: number, p: TCore) => { const n = tStreamFull(seed, p); return () => n().mask; };
-const T = (model: TModel, bias: number, dejaVu = 0, length = 8) => ({ model, bias, dejaVu, length, seed: 1, hrtf: true, spaceDejaVu: 0.5, spaceLength: 8 });
+const T = (model: TModel, bias: number, dejaVu = 0, length = 8) => ({ model, bias, dejaVu, length, seed: 1, hrtf: true, volume: 0.8, spaceDejaVu: 0.5, spaceLength: 8 });
 
 test("t: complementary bernoulli fires exactly one channel; bias extremes pin it", () => {
   for (const m of take(64, tStream(3, T("bernoulli", 0.5)))) assert.ok(m === 1 || m === 2);
