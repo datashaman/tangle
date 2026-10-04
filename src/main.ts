@@ -3,7 +3,7 @@ import { run, type Ev, type Pattern } from "./sequencer.ts";
 import { randomize } from "./randomize.ts";
 import { delaySeconds, driveCurve, filterHz, filterQ, impulse, REVERB_NAMES, REVERB_SECONDS } from "./fx.ts";
 import { capture, sanitizeTake, takePattern, type Take } from "./takes.ts";
-import { CUSTOM, effectiveMask, GRAIN, marbles, SCALES, type TParams } from "./marbles.ts";
+import { CUSTOM, effectiveMask, GRAIN, marbles, SAMPLER, SCALES, type TParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
 import { DEFAULTS, MODELS, R, decode, encode, sanitize } from "./presets.ts";
 import { plan, position, unplan } from "./space.ts";
@@ -69,6 +69,12 @@ let master: GainNode | null = null;
 let grainNode: AudioWorkletNode | null = null; // granular voice; its output level is a separate gain
 let grainOut: GainNode | null = null;
 let grainSends: { d: GainNode; r: GainNode } | null = null; // granular voice into the delay and reverb
+// Sampler: the loaded file (kept as bytes so it can be decoded again at each start) and, per run, its decoded buffer and output.
+let sampleBytes: ArrayBuffer | null = null;
+let sampleBuf: AudioBuffer | null = null;
+let samplerOut: GainNode | null = null;
+let samplerSends: { d: GainNode; r: GainNode } | null = null;
+let samplesPlaying = 0;
 let grainHold = false; // runtime only, not part of presets: freezes the grain buffer
 // Effects: each voice goes dry to the master and, through its own send gains, into a shared tempo-synced delay and convolution reverb.
 type Fx = { delay: DelayNode; fb: GainNode; delayWet: GainNode; reverb: ConvolverNode; reverbWet: GainNode; irSize: number;
@@ -94,6 +100,12 @@ const updateMix = () => {
     grainOut.gain.setTargetAtTime(p.grain.level, now, 0.015);
     grainSends.d.gain.setTargetAtTime(p.grain.delaySend, now, 0.015);
     grainSends.r.gain.setTargetAtTime(p.grain.reverbSend, now, 0.015);
+  }
+  if (samplerOut && samplerSends) {
+    const now = samplerOut.context.currentTime;
+    samplerOut.gain.setTargetAtTime(p.sampler.level, now, 0.015);
+    samplerSends.d.gain.setTargetAtTime(p.sampler.delaySend, now, 0.015);
+    samplerSends.r.gain.setTargetAtTime(p.sampler.reverbSend, now, 0.015);
   }
   if (master) master.gain.setTargetAtTime(p.volume, master.context.currentTime, 0.015);
 };
@@ -251,6 +263,39 @@ fxSlider(driveCol, "chorus", "chorusMix");
 fxSlider(filterCol, "cutoff", "filter");
 fxSlider(filterCol, "resonance", "filterRes");
 select(reverbCol, "size", REVERB_NAMES.map((n, i) => [String(i), n]), String(DEFAULTS.reverbSize), () => String(p.reverbSize), (v) => { p.reverbSize = +v; updateFx(); });
+
+const samplerCard = section("Sampler", wideCol);
+samplerCard.title = "Plays slices of a sample you load, one per pulse of the source voice";
+const loadBtn = html(`<div class="btns"><button type="button" title="Load a sample (wav, mp3, ogg, ...)">load sample…</button><span id="sample-name" class="hint">no sample</span><input type="file" accept="audio/*" hidden></div>`);
+samplerCard.append(loadBtn);
+const [pickBtn] = Array.from(loadBtn.querySelectorAll("button")), fileIn = loadBtn.querySelector("input")!, sampleName = loadBtn.querySelector("span")!;
+const decodeSample = async () => {
+  if (!sampleBytes || !actx) return;
+  try { sampleBuf = await actx.decodeAudioData(sampleBytes.slice(0)); } catch { sampleBuf = null; sampleName.textContent = "could not decode that file"; }
+};
+pickBtn.onclick = () => fileIn.click();
+fileIn.onchange = async () => {
+  const f = fileIn.files?.[0];
+  if (!f) return;
+  sampleBytes = await f.arrayBuffer();
+  sampleName.textContent = `${f.name}${actx ? "" : " (decoded on start)"}`;
+  await decodeSample();
+  if (sampleBuf) sampleName.textContent = `${f.name} · ${sampleBuf.duration.toFixed(1)} s`;
+  fileIn.value = "";
+};
+const sampGrid = html(`<div class="fxgrid"><div></div><div></div></div>`); // two columns: what plays | how loud
+samplerCard.append(sampGrid);
+const [sampLeft, sampRight] = Array.from(sampGrid.children) as HTMLElement[];
+checkbox(sampLeft, "on", () => p.sampler.on, (v) => { p.sampler.on = v; });
+select(sampLeft, "source", [["0", "voice 1"], ["1", "voice 2"], ["2", "voice 3"]], "0", () => String(p.sampler.source), (v) => { p.sampler.source = +v; });
+const sampSlider = (parent: HTMLElement, label: string, key: "length" | "scatter" | "follow" | "level" | "delaySend" | "reverbSend", spec: readonly [number, number, number], hint: string) =>
+  slider(parent, label, spec, DEFAULTS.sampler[key], () => p.sampler[key], (v) => { p.sampler[key] = v; if (key === "level" || key === "delaySend" || key === "reverbSend") updateMix(); }, hint);
+sampSlider(sampLeft, "slice", "length", R.slice, "slice length, 50 ms to 5 s of the sample");
+sampSlider(sampLeft, "start", "scatter", R.scatter, "how far into the sample slices start; follows the spatial déjà vu loop (0 = always from the top)");
+sampSlider(sampLeft, "follow", "follow", R.follow, "how much slice pitch follows the source melody (0 = the sample's own pitch)");
+sampSlider(sampRight, "level", "level", R.level, "sampler level");
+sampSlider(sampRight, "dly", "delaySend", R.send, "delay send");
+sampSlider(sampRight, "rev", "reverbSend", R.send, "reverb send");
 
 const grainCard = section("Grains", pitchCol);
 grainCard.title = "A granular voice: grains cut from the last 4 seconds of what the voices played, one per pulse of the source voice";
@@ -488,6 +533,21 @@ recBtn.onclick = () => {
   say("recording… (saves a 96 kHz 16-bit WAV)");
 };
 
+// One sampler slice: a short-lived buffer source, started at the event's time, with a tiny fade in and out against clicks.
+const playSlice = (ctx: AudioContext, e: Ev) => {
+  if (!sampleBuf || !samplerOut || samplesPlaying >= 24) return;
+  const slice = Math.min(e.dur, sampleBuf.duration), rate = 2 ** (Math.max(-24, Math.min(24, e.params?.semis ?? 0)) / 12);
+  const offset = (e.params?.pos ?? 0) * (sampleBuf.duration - slice), t = Math.max(e.time, ctx.currentTime), len = slice / rate;
+  const src = new AudioBufferSourceNode(ctx, { buffer: sampleBuf, playbackRate: rate }), g = new GainNode(ctx, { gain: 0 });
+  const fade = Math.min(0.01, len / 4);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + fade);
+  g.gain.setValueAtTime(1, t + len - fade); g.gain.linearRampToValueAtTime(0, t + len);
+  src.connect(g).connect(samplerOut);
+  src.start(t, offset, slice);
+  samplesPlaying++;
+  src.onended = () => { samplesPlaying--; g.disconnect(); };
+};
+
 // --- audio ---
 let stop: (() => void) | null = null;
 const go = document.getElementById("go") as HTMLButtonElement;
@@ -546,6 +606,13 @@ go.onclick = async () => {
   grainOut.connect(grainSends.d).connect(delay);
   grainOut.connect(grainSends.r).connect(reverb);
   panners.forEach((pn) => pn.connect(grainNode!)); // the grain buffer hears every voice, after level and position
+  samplerOut = new GainNode(ctx);
+  samplerOut.connect(master); samplerOut.connect(grainNode); // the grain buffer hears the sampler too
+  samplerSends = { d: new GainNode(ctx), r: new GainNode(ctx) };
+  samplerOut.connect(samplerSends.d).connect(delay);
+  samplerOut.connect(samplerSends.r).connect(reverb);
+  samplesPlaying = 0;
+  await decodeSample();
   grainNode.port.postMessage({ hold: grainHold });
   updatePanners();
   updateMix();
@@ -555,13 +622,14 @@ go.onclick = async () => {
   // The live generator keeps running while a take loops (its output is dropped), so going back to live carries on in time.
   const pattern: Pattern = (from, to) => {
     const ev = liveGen(from, to);
-    return takePlay ? takePlay(from, to).filter((e) => (e.voice === GRAIN ? p.grain.on : p.voices[e.voice ?? 0].on)) : ev;
+    return takePlay ? takePlay(from, to).filter((e) => (e.voice === GRAIN ? p.grain.on : e.voice === SAMPLER ? p.sampler.on : p.voices[e.voice ?? 0].on)) : ev;
   };
   const stopRun = run(pattern, () => ctx.currentTime, (e) => {
     const i = e.voice ?? 0;
     played.push(e);
     if (played.length > 6000) played.splice(0, 2000);
-    (i === GRAIN ? grainNode! : nodes[i]).port.postMessage(e);
+    if (i === SAMPLER) playSlice(ctx, e);
+    else (i === GRAIN ? grainNode! : nodes[i]).port.postMessage(e);
     if (e.pos) { // sequenced motion: move the voice at the note's start time, and show it on the pad when it happens
       const { az, el, dist } = e.pos, [x, y, z] = position(az, el, dist);
       panners[i].positionX.setValueAtTime(x, e.time); panners[i].positionY.setValueAtTime(y, e.time); panners[i].positionZ.setValueAtTime(z, e.time);
@@ -569,7 +637,7 @@ go.onclick = async () => {
       if (timers.length > 64) timers = timers.slice(-32); // old ones have fired long ago
     }
   });
-  stop = () => { stopRec(); takePlay = null; actx = null; played.length = 0; setTakeUi(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); grainNode = null; grainOut = null; grainSends = null; panners = []; gains = []; sends = []; master = null; fx = null; live.fill(null); drawPad(); ctx.close(); };
+  stop = () => { stopRec(); takePlay = null; actx = null; played.length = 0; setTakeUi(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); grainNode = null; grainOut = null; grainSends = null; samplerOut = null; samplerSends = null; sampleBuf = null; panners = []; gains = []; sends = []; master = null; fx = null; live.fill(null); drawPad(); ctx.close(); };
   go.textContent = "stop";
   go.setAttribute("aria-pressed", "true");
 };
