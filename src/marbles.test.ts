@@ -23,7 +23,7 @@ test("dejaVu 1 only reorders: values come from the existing loop", () => {
 
 import { tStream as tStreamFull, DRUMS, type TModel, type TCore } from "./marbles.ts";
 const tStream = (seed: number, p: TCore) => { const n = tStreamFull(seed, p); return () => n().mask; };
-const T = (model: TModel, bias: number, dejaVu = 0, length = 8) => ({ model, bias, dejaVu, length });
+const T = (model: TModel, bias: number, dejaVu = 0, length = 8) => ({ model, bias, dejaVu, length, seed: 1 });
 
 test("t: complementary bernoulli fires exactly one channel; bias extremes pin it", () => {
   for (const m of take(64, tStream(3, T("bernoulli", 0.5)))) assert.ok(m === 1 || m === 2);
@@ -50,7 +50,7 @@ test("t: dejaVu 0.5 loops the rhythm; markov is reproducible", () => {
 import { marbles } from "./marbles.ts";
 test("marbles: live step change keeps events ordered and windows contiguous", () => {
   const p = { ...T("independent", 0.5), step: 0.25, jitter: 0, scale: "chromatic", root: 48, spread: 0.75, pitchBias: 0.5, voices: [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any] };
-  const pat = marbles(p, 1);
+  const pat = marbles(p);
   const ev = [...pat(0, 1)];
   p.step = 0.1;
   ev.push(...pat(1, 2));
@@ -62,7 +62,7 @@ test("marbles: live step change keeps events ordered and windows contiguous", ()
 
 test("jitter 0 is an exact grid; jitter 1 wanders but stays near the straight clock", () => {
   const voices = [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any];
-  const times = (jitter: number) => marbles({ ...T("independent", 0), step: 0.25, jitter, scale: "chromatic", root: 48, spread: 0.75, pitchBias: 0.5, voices }, 1)(0, 100).filter((e) => e.voice === 0).map((e) => e.time);
+  const times = (jitter: number) => marbles({ ...T("independent", 0), step: 0.25, jitter, scale: "chromatic", root: 48, spread: 0.75, pitchBias: 0.5, voices })(0, 100).filter((e) => e.voice === 0).map((e) => e.time);
   assert.deepEqual(times(0).slice(0, 5), [0, 0.25, 0.5, 0.75, 1]);
   const t = times(1), grid = t.map((_, i) => i * 0.25);
   assert.ok(t.some((x, i) => Math.abs(x - grid[i]) > 0.01), "no jitter happened");
@@ -95,7 +95,7 @@ import { SCALES } from "./marbles.ts";
 test("marbles: pitches stay inside the chosen scale and root", () => {
   const voices = [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any];
   const base = { ...T("independent", 0.5, 0), step: 0.25, jitter: 0, spread: 0.75, pitchBias: 0.5, voices };
-  const pitches = (scale: string, root: number) => marbles({ ...base, scale, root }, 1)(0, 200).map((e) => e.pitch - e.voice! * 12);
+  const pitches = (scale: string, root: number) => marbles({ ...base, scale, root })(0, 200).map((e) => e.pitch - e.voice! * 12);
   for (const [name, deg] of Object.entries(SCALES)) {
     const set = new Set([...deg, ...deg.map((d) => d + 12)].map((d) => 50 + d));
     assert.ok(pitches(name, 50).every((x) => set.has(x)), name);
@@ -119,4 +119,15 @@ test("xValue: spread 0.75/bias 0.5 is uniform; spread 0 pins to bias; spread 1 i
   assert.ok(mean(0.5, 0.2) < 0.4 && mean(0.5, 0.8) > 0.6, "bias should move the mean");
   const spreadOf = (s: number) => { const v = us.map((u) => xValue(u, s, 0.5)); const m = v.reduce((a, b) => a + b) / v.length; return v.reduce((a, b) => a + (b - m) ** 2, 0) / v.length; };
   assert.ok(spreadOf(0.25) < spreadOf(0.5) && spreadOf(0.5) < spreadOf(0.9), "spread should widen the distribution");
+});
+
+test("marbles: changing p.seed mid-run reseeds; same seed reproduces", () => {
+  const voices = [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any];
+  const mk = (seed: number) => ({ ...T("independent", 0.5, 0), step: 0.25, jitter: 0, scale: "chromatic", root: 48, spread: 0.75, pitchBias: 0.5, voices, seed });
+  const pitches = (p: any) => marbles(p)(0, 30).map((e) => e.pitch);
+  assert.deepEqual(pitches(mk(1)), pitches(mk(1)));
+  assert.notDeepEqual(pitches(mk(1)), pitches(mk(2)));
+  const live = mk(1), pat = marbles(live);
+  pat(0, 10); live.seed = 2;
+  assert.deepEqual(pat(10, 40).map((e) => e.pitch), marbles(mk(2))(10, 40).map((e) => e.pitch));
 });

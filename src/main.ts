@@ -51,6 +51,17 @@ select(rhythm, "model", MODELS.map((m) => [m, m]), DEFAULTS.model, () => p.model
 slider(rhythm, "bias", R.bias, DEFAULTS.bias, () => p.bias, (v) => (p.bias = v));
 slider(rhythm, "déjà vu", R.dejaVu, DEFAULTS.dejaVu, () => p.dejaVu, (v) => (p.dejaVu = v));
 slider(rhythm, "length", R.length, DEFAULTS.length, () => p.length, (v) => (p.length = v));
+// Seed picks which random loop you get; "new" rolls one. Changing it takes effect on the next tick.
+{
+  const l = html(`<label title="double-click to reset"><span>seed</span><input type="number" min="${R.seed[0]}" max="${R.seed[1]}" step="1" style="width:7em"> <button type="button">new</button></label>`);
+  const input = l.querySelector("input")!;
+  const setSeed = (v: number) => { p.seed = Math.min(R.seed[1], Math.max(R.seed[0], Math.round(v) || DEFAULTS.seed)); input.value = String(p.seed); };
+  input.onchange = () => setSeed(+input.value);
+  l.querySelector("button")!.onclick = () => setSeed(1 + Math.floor(Math.random() * R.seed[1]));
+  l.querySelector("span")!.ondblclick = () => setSeed(DEFAULTS.seed);
+  sync.push(() => (input.value = String(p.seed))); input.value = String(p.seed);
+  rhythm.append(l);
+}
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const pitch = section("Pitch");

@@ -22,3 +22,9 @@ test("hostile or broken input is clamped to safe values", () => {
   assert.equal(decode("not base64 json!!"), null);
   assert.deepEqual(sanitize(null), DEFAULTS);
 });
+
+test("seed round-trips and is clamped", () => {
+  assert.equal(decode(encode({ ...DEFAULTS, seed: 4242 }))!.seed, 4242);
+  assert.equal(sanitize({ seed: -5 }).seed, 1);
+  assert.equal(sanitize({ seed: 1e12 }).seed, 999999);
+});
