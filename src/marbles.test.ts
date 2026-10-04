@@ -153,3 +153,34 @@ test("custom scale: mask drives the notes; presets are equivalent masks; empty m
   const ev = marbles({ ...T("independent", 0.5, 0), step: 0.25, jitter: 0, scale: CUSTOM, mask, root: 50, spread: 0.75, pitchBias: 0.5, voices })(0, 100);
   assert.deepEqual([...new Set(ev.map((e) => e.pitch - e.voice! * 12))].sort((a, b) => a - b), [50, 61, 62, 73]);
 });
+
+const motionParams = (over: any, dejaVu = 0.5, length = 4) => ({ ...T("independent", 0, dejaVu, length), step: 0.25, jitter: 0, scale: "chromatic", mask: 1, root: 48, spread: 0.75, pitchBias: 0.5,
+  voices: [{ shape: 0, timbre: 0.5, color: 0.5, on: true, az: 10, el: 0, dist: 2, walk: 0, swing: 0, ...over }, { shape: 3, timbre: 0.5, color: 0.5, on: false, az: 0, el: 0, dist: 2, walk: 0, swing: 0 }, { shape: 5, timbre: 0.5, color: 0.5, on: false, az: 0, el: 0, dist: 2, walk: 0, swing: 0 }] as [any, any, any] });
+const v0 = (ev: any[]) => ev.filter((e) => e.voice === 0);
+
+test("motion: no walk or swing means no position events", () => {
+  assert.ok(v0(marbles(motionParams({}))(0, 5)).every((e) => e.az === undefined));
+});
+
+test("motion: walk advances the azimuth per note and wraps", () => {
+  const az = v0(marbles(motionParams({ walk: 100 }))(0, 5)).map((e) => e.az);
+  assert.deepEqual(az.slice(0, 4), [110, -150, -50, 50]); // 10+100, 10+200 wraps to -150, ...
+});
+
+test("motion: swing stays within +-swing of the base, and deja vu 0.5 loops it", () => {
+  const az = v0(marbles(motionParams({ swing: 40 }, 0.5, 4))(0, 20)).map((e) => e.az);
+  assert.ok(az.every((a: number) => a >= 10 - 40 && a <= 10 + 40));
+  assert.deepEqual(az.slice(0, 4), az.slice(4, 8));
+  assert.ok(new Set(az.slice(0, 4)).size > 1);
+});
+
+test("motion: yields while held, then resumes from the start of the walk", () => {
+  let held = false;
+  const pat = marbles(motionParams({ walk: 30 }), () => held);
+  const first = v0(pat(0, 1.01)).map((e) => e.az); // 5 notes walking: 40, 70, 100, 130, 160
+  assert.deepEqual(first, [40, 70, 100, 130, 160]);
+  held = true;
+  assert.ok(v0(pat(1.01, 2.01)).every((e) => e.az === undefined));
+  held = false;
+  assert.deepEqual(v0(pat(2.01, 2.6)).map((e) => e.az).slice(0, 2), [40, 70]); // restarts from the dropped base
+});

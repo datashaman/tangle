@@ -1,6 +1,6 @@
 // A pattern is any function of a time window -> events. No grid, no loop assumed:
 // non-linear algorithms live here. Sound sources only ever see Ev.
-export type Ev = { time: number; pitch: number; dur: number; voice?: number; params?: Record<string, number> };
+export type Ev = { time: number; pitch: number; dur: number; voice?: number; az?: number; params?: Record<string, number> };
 export type Pattern = (from: number, to: number) => Ev[];
 
 // Stub algorithm: events at every integer multiple of `step` seconds, pitch from a

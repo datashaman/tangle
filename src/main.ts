@@ -53,6 +53,7 @@ const checkbox = (parent: HTMLElement, label: string, get: () => boolean, set: (
 
 // Spatial placement: one PannerNode per voice, created when audio starts; controls call updatePanners() to move them live.
 let panners: PannerNode[] = [];
+let held = -1; // voice currently being dragged on the pad, or -1
 let drawPad = () => {}; // assigned once the pad exists
 const updatePanners = () => { drawPad(); panners.forEach((pn, i) => {
   const [x, y, z] = position(p.voices[i].az, p.voices[i].el, p.voices[i].dist);
@@ -123,6 +124,8 @@ p.voices.forEach((v, i) => {
   slider(s, "color", R.color, DEFAULTS.voices[i].color, () => v.color, (x) => (v.color = x));
   slider(s, "azimuth (°)", R.az, DEFAULTS.voices[i].az, () => v.az, (x) => { v.az = x; updatePanners(); });
   slider(s, "elevation (°)", R.el, DEFAULTS.voices[i].el, () => v.el, (x) => { v.el = x; updatePanners(); });
+  slider(s, "walk (° per note)", R.walk, DEFAULTS.voices[i].walk, () => v.walk, (x) => { v.walk = x; updatePanners(); });
+  slider(s, "swing (°)", R.swing, DEFAULTS.voices[i].swing, () => v.swing, (x) => { v.swing = x; updatePanners(); });
   slider(s, "distance", R.dist, DEFAULTS.voices[i].dist, () => v.dist, (x) => { v.dist = x; updatePanners(); });
 });
 
@@ -141,7 +144,10 @@ const space = section("Space");
     g.style.opacity = v.on ? "1" : "0.35";
   });
   groups.forEach((g, i) => {
-    g.onpointerdown = (e) => g.setPointerCapture(e.pointerId);
+    // While held, the sequencer's motion yields; on release it takes over again from the dropped position.
+    g.onpointerdown = (e) => { g.setPointerCapture(e.pointerId); held = i; g.classList.add("held"); };
+    const release = () => { if (held === i) held = -1; g.classList.remove("held"); updatePanners(); };
+    g.onpointerup = g.onpointercancel = release;
     g.onpointermove = (e) => {
       if (!g.hasPointerCapture(e.pointerId)) return;
       const pt = svg.createSVGPoint();
@@ -234,7 +240,14 @@ go.onclick = async () => {
   });
   updatePanners();
   await ctx.resume();
-  const stopRun = run(marbles(p), () => ctx.currentTime, (e) => nodes[e.voice ?? 0].port.postMessage(e));
+  const stopRun = run(marbles(p, (i) => held === i), () => ctx.currentTime, (e) => {
+    const i = e.voice ?? 0;
+    nodes[i].port.postMessage(e);
+    if (e.az !== undefined) { // sequenced motion: move the voice at the note's start time
+      const [x, y, z] = position(e.az, p.voices[i].el, p.voices[i].dist);
+      panners[i].positionX.setValueAtTime(x, e.time); panners[i].positionY.setValueAtTime(y, e.time); panners[i].positionZ.setValueAtTime(z, e.time);
+    }
+  });
   stop = () => { stopRun(); nodes.forEach((n) => n.disconnect()); panners = []; ctx.close(); };
   go.textContent = "stop";
   go.setAttribute("aria-pressed", "true");
