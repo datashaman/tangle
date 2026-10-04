@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { run, type Ev, type Pattern } from "./sequencer.ts";
 import { randomize } from "./randomize.ts";
+import { delaySeconds, impulse, REVERB_NAMES, REVERB_SECONDS } from "./fx.ts";
 import { capture, sanitizeTake, takePattern, type Take } from "./takes.ts";
 import { CUSTOM, effectiveMask, marbles, SCALES, type TParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
@@ -61,6 +62,9 @@ const live: ({ az: number; dist: number } | null)[] = [null, null, null];
 let timers: number[] = [];
 let gains: GainNode[] = []; // per-voice level, then the master
 let master: GainNode | null = null;
+// Effects sit on a bus between the voices and the master: dry + a tempo-synced delay + a convolution reverb.
+type Fx = { delay: DelayNode; fb: GainNode; delayWet: GainNode; reverb: ConvolverNode; reverbWet: GainNode; irSize: number };
+let fx: Fx | null = null;
 let held = -1; // voice currently being dragged on the pad, or -1
 let drawPad = () => {}; // assigned once the pad exists
 const updatePanners = () => { live.fill(null); drawPad(); panners.forEach((pn, i) => {
@@ -73,6 +77,21 @@ const updatePanners = () => { live.fill(null); drawPad(); panners.forEach((pn, i
 const updateMix = () => {
   gains.forEach((g, i) => g.gain.setTargetAtTime(p.voices[i].level, g.context.currentTime, 0.015));
   if (master) master.gain.setTargetAtTime(p.volume, master.context.currentTime, 0.015);
+};
+const updateFx = () => {
+  if (!fx) return;
+  const ctx = fx.delay.context as AudioContext, now = ctx.currentTime;
+  fx.delayWet.gain.setTargetAtTime(p.delayMix, now, 0.02);
+  fx.fb.gain.setTargetAtTime(p.delayFeedback, now, 0.02);
+  fx.delay.delayTime.setTargetAtTime(delaySeconds(p.delayTicks, p.step), now, 0.05); // follows the tick length
+  fx.reverbWet.gain.setTargetAtTime(p.reverbMix, now, 0.02);
+  if (fx.irSize !== p.reverbSize) { // new room: generate its impulse response
+    const [l, r] = impulse(ctx.sampleRate, REVERB_SECONDS[p.reverbSize]);
+    const buf = ctx.createBuffer(2, l.length, ctx.sampleRate);
+    buf.copyToChannel(l, 0); buf.copyToChannel(r, 1);
+    fx.reverb.buffer = buf;
+    fx.irSize = p.reverbSize;
+  }
 };
 const fader = (parent: HTMLElement, label: string, [min, max, step]: readonly number[], def: number, get: () => number, set: (v: number) => void) => {
   const chan = html(`<div class="chan"><label class="ch" title="double-click to reset"><output></output><input type="range" min="${min}" max="${max}" step="${step}" aria-label="${label} level"><span>${label}</span></label></div>`);
@@ -112,7 +131,7 @@ addEventListener("keydown", (e) => {
 const stack = html(`<div class="stack"></div>`); // Clock and Takes share one grid cell
 app.append(stack);
 const clock = section("Clock", stack);
-slider(clock, "tick length (s)", R.step, DEFAULTS.step, () => p.step, (v) => (p.step = v));
+slider(clock, "tick length (s)", R.step, DEFAULTS.step, () => p.step, (v) => { p.step = v; updateFx(); });
 slider(clock, "jitter", R.jitter, DEFAULTS.jitter, () => p.jitter, (v) => (p.jitter = v));
 
 const rhythm = section("Rhythm");
@@ -166,8 +185,9 @@ select(pitch, "scale", [...Object.keys(SCALES), CUSTOM].map((s) => [s, s]), DEFA
 slider(pitch, "spread", R.spread, DEFAULTS.spread, () => p.spread, (v) => (p.spread = v));
 slider(pitch, "bias", R.pitchBias, DEFAULTS.pitchBias, () => p.pitchBias, (v) => (p.pitchBias = v));
 
-const voicesCard = section("Voices");
-voicesCard.classList.add("wide");
+const wideCol = html(`<div class="stack wide"></div>`); // Voices and Effects share a double-width cell
+app.append(wideCol);
+const voicesCard = section("Voices", wideCol);
 const voicesGrid = html(`<div class="voices"></div>`);
 voicesCard.append(voicesGrid);
 p.voices.forEach((v, i) => {
@@ -186,6 +206,18 @@ p.voices.forEach((v, i) => {
   slider(more, "distance swing", R.swingDist, DEFAULTS.voices[i].swingDist, () => v.swingDist, (x) => { v.swingDist = x; updatePanners(); });
   slider(more, "distance", R.dist, DEFAULTS.voices[i].dist, () => v.dist, (x) => { v.dist = x; updatePanners(); });
 });
+
+const fxCard = section("Effects", wideCol);
+const fxGrid = html(`<div class="fxgrid"><div><h3>Delay</h3></div><div><h3>Reverb</h3></div></div>`);
+fxCard.append(fxGrid);
+const [delayCol, reverbCol] = Array.from(fxGrid.children) as HTMLElement[];
+const fxSlider = (parent: HTMLElement, label: string, key: "delayMix" | "delayTicks" | "delayFeedback" | "reverbMix") =>
+  slider(parent, label, R[key], DEFAULTS[key], () => p[key], (v) => { p[key] = v; updateFx(); });
+fxSlider(delayCol, "mix", "delayMix");
+fxSlider(delayCol, "time (ticks)", "delayTicks");
+fxSlider(delayCol, "feedback", "delayFeedback");
+fxSlider(reverbCol, "mix", "reverbMix");
+select(reverbCol, "size", REVERB_NAMES.map((n, i) => [String(i), n]), String(DEFAULTS.reverbSize), () => String(p.reverbSize), (v) => { p.reverbSize = +v; updateFx(); });
 
 // --- takes: grab what just played (retroactively), loop it exactly, save it ---
 const played: Ev[] = []; // every event handed to a voice, in AudioContext time: the retroactive buffer
@@ -309,6 +341,7 @@ const apply = (next: TParams) => {
   sync.forEach((f) => f());
   updatePanners();
   updateMix();
+  updateFx();
 };
 
 const bar = document.getElementById("presets")!;
@@ -420,14 +453,24 @@ go.onclick = async () => {
   });
   master = new GainNode(ctx);
   master.connect(ctx.destination);
+  const bus = new GainNode(ctx); // everything the voices make; the effects are sends off it
+  bus.connect(master);
+  const delay = new DelayNode(ctx, { maxDelayTime: 4 });
+  const tone = new BiquadFilterNode(ctx, { type: "lowpass", frequency: 3500 }); // darkens each repeat
+  const fb = new GainNode(ctx), delayWet = new GainNode(ctx, { gain: 0 });
+  bus.connect(delay); delay.connect(tone); tone.connect(fb); fb.connect(delay); tone.connect(delayWet); delayWet.connect(master);
+  const reverb = new ConvolverNode(ctx), reverbWet = new GainNode(ctx, { gain: 0 });
+  bus.connect(reverb); reverb.connect(reverbWet); reverbWet.connect(master);
+  fx = { delay, fb, delayWet, reverb, reverbWet, irSize: -1 };
   gains = nodes.map(() => new GainNode(ctx));
   panners = nodes.map((n, i) => {
     const pn = new PannerNode(ctx, { distanceModel: "inverse", refDistance: 1 });
-    n.connect(gains[i]).connect(pn).connect(master!);
+    n.connect(gains[i]).connect(pn).connect(bus);
     return pn;
   });
   updatePanners();
   updateMix();
+  updateFx();
   await ctx.resume();
   const liveGen = marbles(p, (i) => held === i);
   // The live generator keeps running while a take loops (its output is dropped), so going back to live carries on in time.
@@ -447,7 +490,7 @@ go.onclick = async () => {
       if (timers.length > 64) timers = timers.slice(-32); // old ones have fired long ago
     }
   });
-  stop = () => { stopRec(); takePlay = null; actx = null; played.length = 0; setTakeUi(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); panners = []; gains = []; master = null; live.fill(null); drawPad(); ctx.close(); };
+  stop = () => { stopRec(); takePlay = null; actx = null; played.length = 0; setTakeUi(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); panners = []; gains = []; master = null; fx = null; live.fill(null); drawPad(); ctx.close(); };
   go.textContent = "stop";
   go.setAttribute("aria-pressed", "true");
 };

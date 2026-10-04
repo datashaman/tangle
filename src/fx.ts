@@ -5,7 +5,7 @@ export const REVERB_SECONDS = [0.7, 1.5, 2.5, 4]; // kept short: the AudioContex
 
 // Stereo impulse response: decorrelated noise with an exponential tail (-60 dB at the end) that also darkens as it decays,
 // like a real room soaking up the highs. One-pole lowpass whose cutoff falls with time.
-export function impulse(sampleRate: number, seconds: number, rnd: () => number = Math.random): Float32Array[] {
+export function impulse(sampleRate: number, seconds: number, rnd: () => number = Math.random): Float32Array<ArrayBuffer>[] {
   const n = Math.round(sampleRate * seconds);
   return [0, 1].map(() => {
     const out = new Float32Array(n);
