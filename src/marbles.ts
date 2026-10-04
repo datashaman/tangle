@@ -44,8 +44,13 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
 export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov" | "clusters" | "divider";
 // Braids shape/timbre/color (0..1), mute, and position (see space.ts). Only shape/timbre/color go to the oscillator.
 export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean; az: number; el: number; dist: number; walk: number; swing: number; swingEl: number; swingDist: number; level: number; delaySend: number; reverbSend: number };
+// Granular voice ("voice 4"): grains cut from the last few seconds of what the voices played, one grain per pulse of
+// the `source` voice. Grain position and pan come from that voice's déjà vu spatial streams, pitch follows its melody.
+export type GrainParams = { on: boolean; source: number; size: number; scatter: number; follow: number; spread: number; level: number };
+export const GRAIN = 3; // Ev.voice index of the granular voice
+export const grainSecs = (size: number) => 0.02 * 25 ** size; // 0..1 -> 20 ms .. 0.5 s
 export type TCore = DejaVu & { bias: number; model: TModel };
-export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; hrtf: boolean; volume: number; delayMix: number; delayTicks: number; delayFeedback: number; reverbMix: number; reverbSize: number; drive: number; chorusMix: number; filter: number; filterRes: number; spaceDejaVu: number; spaceLength: number; voices: [VoiceParams, VoiceParams, VoiceParams] };
+export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; hrtf: boolean; volume: number; delayMix: number; delayTicks: number; delayFeedback: number; reverbMix: number; reverbSize: number; drive: number; chorusMix: number; filter: number; filterRes: number; spaceDejaVu: number; spaceLength: number; grain: GrainParams; voices: [VoiceParams, VoiceParams, VoiceParams] };
 
 export const DRUMS = [
   [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],
@@ -313,6 +318,10 @@ export const marbles = (p: TParams, held: (voice: number) => boolean = () => fal
         const pitch = p.root + OCTAVE[ch] + degree(x[ch]());
         const { on, az, el, dist, walk, swing, swingEl, swingDist, level: _level, delaySend: _ds, reverbSend: _rs, ...params } = p.voices[ch];
         const [ua, ue, ud] = hop.map((h) => h[ch]()); // always advance, like the pitch stream
+        if (p.grain?.on && p.grain.source === ch) { // grains ride the source voice's pulses, even when that voice is muted
+          const g = p.grain;
+          out.push({ time: at + phase * dt, pitch, dur: grainSecs(g.size), voice: GRAIN, params: { pos: g.scatter * ua, pan: g.spread * (2 * ue - 1), semis: g.follow * (pitch - p.root) } });
+        }
         if (held(ch)) walked[ch] = 0;
         if (!on) continue;
         const moves = !held(ch) && (walk || swing || swingEl || swingDist);

@@ -47,6 +47,12 @@ export function randomize(p: TParams, scope: "music" | "all", r: () => number = 
     n.chorusMix = chance(0.4, r) ? Math.round(between(0.2, 0.7, r) * 100) / 100 : 0;
     n.filter = chance(0.5, r) ? Math.round(between(0.55, 0.95, r) * 100) / 100 : 1; // never closes enough to silence the mix
     n.filterRes = n.filter < 1 ? Math.round(between(0, 0.6, r) * 100) / 100 : 0;
+    // granular voice: reshaped but never switched on or off (that, like the mixer, is the player's call)
+    n.grain.source = Math.floor(r() * 3);
+    n.grain.size = Math.round(between(0.2, 0.8, r) * 100) / 100;
+    n.grain.scatter = Math.round(r() * 100) / 100;
+    n.grain.follow = pick([0, 0.5, 1], r);
+    n.grain.spread = Math.round(r() * 100) / 100;
     for (const v of n.voices) { // per-voice sends: a third of the time a voice stays dry, otherwise anywhere up to full
       v.delaySend = chance(0.3, r) ? 0 : Math.round(r() * 100) / 100;
       v.reverbSend = chance(0.3, r) ? 0 : Math.round(r() * 100) / 100;

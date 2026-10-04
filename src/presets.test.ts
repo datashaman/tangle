@@ -8,6 +8,7 @@ test("preset survives a share-link round trip", () => {
   p.volume = 0.6;
   p.spaceDejaVu = 0.2; p.spaceLength = 5;
   p.hrtf = false;
+  p.grain = { on: true, source: 2, size: 0.8, scatter: 0.6, follow: 1, spread: 0.2, level: 0.5 };
   assert.deepEqual(decode(encode(p)), p);
 });
 
@@ -87,4 +88,9 @@ test("per-voice sends default to full, round-trip, are clamped, and old links ke
   assert.deepEqual(decode(encode(p)), p);
   const s = sanitize({ voices: [{ delaySend: 9, reverbSend: -1 }] });
   assert.deepEqual([s.voices[0].delaySend, s.voices[0].reverbSend, s.voices[1].delaySend], [1, 0, 1]);
+});
+
+test("grain params are clamped and fall back to defaults", () => {
+  const s = sanitize({ grain: { on: "yes", source: 9, size: -1, scatter: 5, follow: "x" } });
+  assert.deepEqual(s.grain, { ...DEFAULTS.grain, source: 2, size: 0, scatter: 1 });
 });

@@ -23,7 +23,7 @@ test("dejaVu 1 only reorders: values come from the existing loop", () => {
 
 import { tStream as tStreamFull, DRUMS, type TModel, type TCore } from "./marbles.ts";
 const tStream = (seed: number, p: TCore) => { const n = tStreamFull(seed, p); return () => n().mask; };
-const T = (model: TModel, bias: number, dejaVu = 0, length = 8) => ({ model, bias, dejaVu, length, seed: 1, hrtf: true, volume: 0.8, delayMix: 0, delayTicks: 3, delayFeedback: 0.4, reverbMix: 0, reverbSize: 2, drive: 0, chorusMix: 0, filter: 1, filterRes: 0, spaceDejaVu: 0.5, spaceLength: 8 });
+const T = (model: TModel, bias: number, dejaVu = 0, length = 8) => ({ model, bias, dejaVu, length, seed: 1, hrtf: true, volume: 0.8, delayMix: 0, delayTicks: 3, delayFeedback: 0.4, reverbMix: 0, reverbSize: 2, drive: 0, chorusMix: 0, filter: 1, filterRes: 0, spaceDejaVu: 0.5, spaceLength: 8, grain: { on: false, source: 0, size: 0.5, scatter: 0.3, follow: 0.5, spread: 0.5, level: 0.8 } });
 
 test("t: complementary bernoulli fires exactly one channel; bias extremes pin it", () => {
   for (const m of take(64, tStream(3, T("bernoulli", 0.5)))) assert.ok(m === 1 || m === 2);
@@ -213,4 +213,19 @@ test("freeze: setting deja vu to 0.5 loops the last `length` steps", () => {
   assert.deepEqual(after.slice(8, 16), after.slice(0, 8)); // ...repeating
   assert.deepEqual(after.slice(32, 40), after.slice(0, 8));
   assert.ok(new Set(before.slice(-8)).size > 1);
+});
+
+test("granular voice: one grain per source pulse, off by default, never disturbs the notes", () => {
+  const mk = (grain?: any) => ({ ...T("independent", 0.5, 0), step: 0.25, jitter: 0, scale: "chromatic", mask: 1, root: 48, spread: 0.75, pitchBias: 0.5, grain,
+    voices: [{ shape: 0, timbre: 0.5, color: 0.5, on: true }, { shape: 3, timbre: 0.5, color: 0.5, on: false }, { shape: 5, timbre: 0.5, color: 0.5, on: false }] as [any, any, any] });
+  const base = marbles(mk())(0, 10);
+  assert.ok(base.every((e) => e.voice !== 3));
+  const g = { on: true, source: 1, size: 0.5, scatter: 0.4, follow: 1, spread: 0.5, level: 0.8 }; // source voice is muted: grains still play
+  const ev = marbles(mk(g))(0, 10);
+  assert.deepEqual(ev.filter((e) => e.voice !== 3), base); // notes unchanged
+  const grains = ev.filter((e) => e.voice === 3);
+  assert.ok(grains.length > 0);
+  assert.ok(grains.every((e) => e.params!.pos >= 0 && e.params!.pos <= 0.4 && Math.abs(e.params!.pan) <= 0.5 && e.dur > 0.019 && e.dur < 0.51));
+  assert.ok(marbles(mk({ ...g, source: 2 }))(0, 10).filter((e) => e.voice === 3).length === 40); // voice 3 fires every tick
+  assert.ok(grains.every((e) => e.params!.semis === e.pitch - 48), "follow 1 transposes by the melody");
 });
