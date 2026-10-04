@@ -35,6 +35,12 @@
   .kb .root::before { content: ""; position: absolute; left: 50%; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: currentColor; }
   .kb .w.root::before { bottom: 22px; }
   .kb .b.root::before { bottom: 6px; }
+  .pad { display: block; width: 100%; max-width: 320px; margin: 0 auto 10px; touch-action: none; }
+  .pad .ring { fill: none; stroke: var(--line); stroke-width: 1; }
+  .pad .head { fill: var(--muted); stroke: none; }
+  .pad .vp { cursor: grab; }
+  .pad .vp circle { fill: var(--accent); }
+  .pad .vp text { fill: var(--on-accent); font-size: 11px; font-weight: 700; pointer-events: none; }
   #status { color: var(--muted); font-size: 13px; }
 </style>
 <main>

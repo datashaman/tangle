@@ -3,7 +3,7 @@ import { run } from "./sequencer.ts";
 import { CUSTOM, effectiveMask, marbles, SCALES, type TParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
 import { DEFAULTS, MODELS, R, decode, encode, sanitize } from "./presets.ts";
-import { position } from "./space.ts";
+import { plan, position, unplan } from "./space.ts";
 import workletUrl from "./braids/worklet.js?url";
 import wasmUrl from "./braids/braids.wasm?url";
 
@@ -53,11 +53,12 @@ const checkbox = (parent: HTMLElement, label: string, get: () => boolean, set: (
 
 // Spatial placement: one PannerNode per voice, created when audio starts; controls call updatePanners() to move them live.
 let panners: PannerNode[] = [];
-const updatePanners = () => panners.forEach((pn, i) => {
+let drawPad = () => {}; // assigned once the pad exists
+const updatePanners = () => { drawPad(); panners.forEach((pn, i) => {
   const [x, y, z] = position(p.voices[i].az, p.voices[i].el, p.voices[i].dist);
   pn.positionX.value = x; pn.positionY.value = y; pn.positionZ.value = z;
   pn.panningModel = p.hrtf ? "HRTF" : "equalpower";
-});
+}); };
 
 const clock = section("Clock");
 slider(clock, "tick length (s)", R.step, DEFAULTS.step, () => p.step, (v) => (p.step = v));
@@ -116,7 +117,7 @@ slider(pitch, "bias", R.pitchBias, DEFAULTS.pitchBias, () => p.pitchBias, (v) =>
 
 p.voices.forEach((v, i) => {
   const s = section(i === 2 ? "Voice 3 · every tick" : `Voice ${i + 1}`);
-  checkbox(s, "on", () => v.on, (x) => (v.on = x));
+  checkbox(s, "on", () => v.on, (x) => { v.on = x; drawPad(); });
   select(s, "shape", SHAPES.map((n, k) => [String(k), n]), String(DEFAULTS.voices[i].shape), () => String(v.shape), (x) => (v.shape = +x));
   slider(s, "timbre", R.timbre, DEFAULTS.voices[i].timbre, () => v.timbre, (x) => (v.timbre = x));
   slider(s, "color", R.color, DEFAULTS.voices[i].color, () => v.color, (x) => (v.color = x));
@@ -126,6 +127,37 @@ p.voices.forEach((v, i) => {
 });
 
 const space = section("Space");
+// Top-down pad: drag a voice around the listener. 10 svg units = 1 distance unit; front is up.
+{
+  const dots = p.voices.map((_, i) => `<g class="vp" data-i="${i}" tabindex="-1"><circle r="9"/><text y="4" text-anchor="middle">${i + 1}</text></g>`).join("");
+  const svg = html(`<svg class="pad" viewBox="-110 -110 220 220" aria-hidden="true">
+    <circle class="ring" r="10"/><circle class="ring" r="50"/><circle class="ring" r="100"/>
+    <path class="ring" d="M0 -105V105M-105 0H105"/>
+    <circle class="head" r="5"/><path class="head" d="M0 -10L-3.5 -4H3.5Z"/>${dots}</svg>`) as unknown as SVGSVGElement;
+  const groups = Array.from(svg.querySelectorAll<SVGGElement>(".vp"));
+  drawPad = () => groups.forEach((g, i) => {
+    const v = p.voices[i], [x, y] = plan(v.az, v.dist);
+    g.setAttribute("transform", `translate(${10 * x} ${-10 * y})`);
+    g.style.opacity = v.on ? "1" : "0.35";
+  });
+  groups.forEach((g, i) => {
+    g.onpointerdown = (e) => g.setPointerCapture(e.pointerId);
+    g.onpointermove = (e) => {
+      if (!g.hasPointerCapture(e.pointerId)) return;
+      const pt = svg.createSVGPoint();
+      pt.x = e.clientX; pt.y = e.clientY;
+      const m = pt.matrixTransform(svg.getScreenCTM()!.inverse());
+      const { az, dist } = unplan(m.x / 10, -m.y / 10);
+      p.voices[i].az = Math.round(az);
+      p.voices[i].dist = Math.round(Math.min(R.dist[1], Math.max(R.dist[0], dist)) * 10) / 10;
+      sync.forEach((f) => f()); // moves the sliders too
+      updatePanners();
+    };
+  });
+  sync.push(drawPad);
+  drawPad();
+  space.append(svg);
+}
 checkbox(space, "HRTF (3D, use headphones; off = plain stereo pan)", () => p.hrtf, (v) => { p.hrtf = v; updatePanners(); });
 
 // --- presets: saved in localStorage, shared as a URL hash ---
