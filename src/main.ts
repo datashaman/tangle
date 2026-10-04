@@ -9,6 +9,8 @@ import { DEFAULTS, MODELS, R, decode, encode, sanitize } from "./presets.ts";
 import { plan, position, unplan } from "./space.ts";
 import workletUrl from "./braids/worklet.js?url";
 import grainUrl from "./grains.js?url";
+import recorderUrl from "./recorder.js?url";
+import { encodeWav } from "./wav.ts";
 import wasmUrl from "./braids/braids.wasm?url";
 
 const p: TParams = structuredClone(DEFAULTS);
@@ -453,34 +455,37 @@ addEventListener("keydown", (e) => {
   if (e.key === "r") roll("music"); else if (e.key === "R") roll("all"); else if (e.key === "u") undo();
 });
 
-// --- recording: tap the master gain into a MediaRecorder; stopping downloads the file ---
-let rec: MediaRecorder | null = null;
+// --- recording: tap the end of the master chain with a worklet and save lossless 16-bit WAV on stop ---
+let rec: { node: AudioWorkletNode; blocks: Float32Array[][] } | null = null;
 const recBtn = document.getElementById("rec") as HTMLButtonElement;
-const stopRec = () => { if (rec && rec.state !== "inactive") rec.stop(); };
+const stopRec = () => {
+  if (!rec) return;
+  const { node, blocks } = rec;
+  rec = null;
+  node.port.onmessage = null; node.disconnect();
+  recBtn.setAttribute("aria-pressed", "false");
+  if (!blocks.length) return say("nothing recorded");
+  const a = Object.assign(document.createElement("a"), {
+    href: URL.createObjectURL(new Blob([encodeWav(blocks, node.context.sampleRate)], { type: "audio/wav" })),
+    download: `tangle-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.wav`,
+  });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  say(`saved ${a.download}`);
+};
 recBtn.onclick = () => {
-  if (rec && rec.state !== "inactive") return stopRec();
+  if (rec) return stopRec();
   const m = fx?.out;
   if (!m) return say("press start first, then record");
-  const dest = (m.context as AudioContext).createMediaStreamDestination();
-  m.connect(dest);
-  const r = (rec = new MediaRecorder(dest.stream));
-  const chunks: Blob[] = [];
-  r.ondataavailable = (e) => chunks.push(e.data);
-  r.onstop = () => {
-    try { m.disconnect(dest); } catch { /* context already closed */ }
-    recBtn.setAttribute("aria-pressed", "false");
-    const ext = r.mimeType.includes("mp4") ? "m4a" : r.mimeType.includes("ogg") ? "ogg" : "webm";
-    const a = Object.assign(document.createElement("a"), {
-      href: URL.createObjectURL(new Blob(chunks, { type: r.mimeType })),
-      download: `tangle-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.${ext}`,
-    });
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-    say(`saved ${a.download}`);
-  };
-  r.start();
+  const ctx = m.context as AudioContext;
+  const node = new AudioWorkletNode(ctx, "recorder", { numberOfOutputs: 1, outputChannelCount: [2] });
+  const blocks: Float32Array[][] = [];
+  node.port.onmessage = ({ data }) => blocks.push(data);
+  m.connect(node);
+  node.connect(new GainNode(ctx, { gain: 0 })).connect(ctx.destination); // keeps the tap pulled without adding sound
+  rec = { node, blocks };
   recBtn.setAttribute("aria-pressed", "true");
-  say("recording…");
+  say("recording… (saves a 96 kHz 16-bit WAV)");
 };
 
 // --- audio ---
@@ -492,6 +497,7 @@ go.onclick = async () => {
   actx = ctx;
   await ctx.audioWorklet.addModule(workletUrl);
   await ctx.audioWorklet.addModule(grainUrl);
+  await ctx.audioWorklet.addModule(recorderUrl);
   const wasm = await (await fetch(wasmUrl)).arrayBuffer();
   // One worklet node (own wasm instance) per voice.
   const nodes = [0, 1, 2].map(() => {
