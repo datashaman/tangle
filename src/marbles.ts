@@ -44,7 +44,7 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
 export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov" | "clusters" | "divider";
 export type VoiceParams = { shape: number; timbre: number; color: number }; // Braids, timbre/color 0..1
 export type TCore = DejaVu & { bias: number; model: TModel };
-export type TParams = TCore & { step: number; jitter: number; voices: [VoiceParams, VoiceParams] };
+export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; voices: [VoiceParams, VoiceParams] };
 
 export const DRUMS = [
   [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],
@@ -174,13 +174,30 @@ const fastBeta = (u: number) => {
   return ICDF[i] + (ICDF[i + 1] - ICDF[i]) * (f - i);
 };
 
+// Scale degrees in semitones within one octave; the quantizer spans two octaves.
+// ponytail: fixed presets; Marbles' own quantizer has recordable scales and per-degree weights.
+export const SCALES: Record<string, number[]> = {
+  "minor pentatonic": [0, 3, 5, 7, 10],
+  "major pentatonic": [0, 2, 4, 7, 9],
+  "major": [0, 2, 4, 5, 7, 9, 11],
+  "natural minor": [0, 2, 3, 5, 7, 8, 10],
+  "dorian": [0, 2, 3, 5, 7, 9, 10],
+  "phrygian": [0, 1, 3, 5, 7, 8, 10],
+  "lydian": [0, 2, 4, 6, 7, 9, 11],
+  "mixolydian": [0, 2, 4, 5, 7, 9, 10],
+  "harmonic minor": [0, 2, 3, 5, 7, 8, 11],
+  "blues": [0, 3, 5, 6, 7, 10],
+  "whole tone": [0, 2, 4, 6, 8, 10],
+  "diminished": [0, 2, 3, 5, 6, 8, 9, 11],
+  "chromatic": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+};
+
 // Stateful: advances one tick per step, so windows must arrive in order (run() does).
 // Channel 0/1 -> voice 0/1; each draws its pitch from its own déjà vu stream (Marbles' X outputs).
-// ponytail: minor-pentatonic quantizer; a rate change takes effect from the next tick.
-export const marbles = (p: TParams, seed = 1, root = 48): Pattern => {
+// Scale and root are read per note, so they can change live; a rate change takes effect from the next tick.
+export const marbles = (p: TParams, seed = 1): Pattern => {
   const t = tStream(seed, p);
   const x = [dejaVuStream(seed + 1, p), dejaVuStream(seed + 2, p)];
-  const scale = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22];
   let at: number | undefined; // next tick time; p.step may change live, so accumulate instead of i * step
   let phaseDiff = 0; // how far the jittered clock has drifted from the straight one (in ticks)
   return (from, to) => {
@@ -193,8 +210,11 @@ export const marbles = (p: TParams, seed = 1, root = 48): Pattern => {
       const mult = 2 ** (semis / 12) * (phaseDiff > 0 ? 1 + phaseDiff : 1 / (1 - phaseDiff));
       phaseDiff += 1 / mult - 1;
       const dt = p.step / mult; // length of this tick; pulses are placed by phase inside it
+      const deg = SCALES[p.scale] ?? SCALES.chromatic;
+      const notes = [...deg, ...deg.map((d) => d + 12)]; // two octaves
+      const degree = (v: number) => notes[Math.floor(v * notes.length)];
       for (const { ch, phase, period } of pulses) {
-        out.push({ time: at + phase * dt, pitch: root + 12 * ch + scale[Math.floor(x[ch]() * scale.length)], dur: Math.min(1, period) * dt * 0.5, voice: ch, params: { ...p.voices[ch] } });
+        out.push({ time: at + phase * dt, pitch: p.root + 12 * ch + degree(x[ch]()), dur: Math.min(1, period) * dt * 0.5, voice: ch, params: { ...p.voices[ch] } });
       }
       at += dt;
     }
