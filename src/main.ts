@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
-import { run } from "./sequencer.ts";
+import { run, type Ev, type Pattern } from "./sequencer.ts";
+import { capture, sanitizeTake, takePattern, type Take } from "./takes.ts";
 import { CUSTOM, effectiveMask, marbles, SCALES, type TParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
 import { DEFAULTS, MODELS, R, decode, encode, sanitize } from "./presets.ts";
@@ -107,7 +108,9 @@ addEventListener("keydown", (e) => {
   if (e.key === "f" && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target as HTMLElement).closest("input, select, textarea")) setFrozen(thawed === null);
 });
 
-const clock = section("Clock");
+const stack = html(`<div class="stack"></div>`); // Clock and Takes share one grid cell
+app.append(stack);
+const clock = section("Clock", stack);
 slider(clock, "tick length (s)", R.step, DEFAULTS.step, () => p.step, (v) => (p.step = v));
 slider(clock, "jitter", R.jitter, DEFAULTS.jitter, () => p.jitter, (v) => (p.jitter = v));
 
@@ -182,6 +185,71 @@ p.voices.forEach((v, i) => {
   slider(more, "distance swing", R.swingDist, DEFAULTS.voices[i].swingDist, () => v.swingDist, (x) => { v.swingDist = x; updatePanners(); });
   slider(more, "distance", R.dist, DEFAULTS.voices[i].dist, () => v.dist, (x) => { v.dist = x; updatePanners(); });
 });
+
+// --- takes: grab what just played (retroactively), loop it exactly, save it ---
+const played: Ev[] = []; // every event handed to a voice, in AudioContext time: the retroactive buffer
+let take: Take | null = null;
+let takePlay: Pattern | null = null; // looping the take instead of the live generator
+let actx: AudioContext | null = null;
+const captureSecs = { v: 8 };
+const takesCard = section("Takes", stack);
+slider(takesCard, "capture (s)", [1, 32, 1], 8, () => captureSecs.v, (v) => (captureSecs.v = v));
+const takeBtns = html(`<div class="btns"><button type="button" title="Grab the last N seconds and loop them (press c)">capture</button><button type="button" aria-pressed="false" disabled title="Loop the take / go back to live">loop take</button></div>`);
+takesCard.append(takeBtns);
+const [capBtn, loopBtn] = Array.from(takeBtns.querySelectorAll("button"));
+const setTakeUi = () => { loopBtn.disabled = !take; loopBtn.setAttribute("aria-pressed", String(!!takePlay)); };
+const startLoop = (anchor: number) => { takePlay = takePattern(take!, anchor); setTakeUi(); };
+const doCapture = () => {
+  if (!actx || !played.length) return say("start and play something first");
+  const edge = Math.max(...played.map((e) => e.time)) + 1e-6; // just past every note already handed to the voices, so nothing overlaps
+  take = capture(played, edge, captureSecs.v);
+  startLoop(edge); // the loop carries on exactly where the capture ended
+  say(`captured ${take.events.length} notes (${captureSecs.v} s) and looping; press "loop take" to go back to live`);
+};
+capBtn.onclick = doCapture;
+loopBtn.onclick = () => {
+  if (takePlay) { takePlay = null; setTakeUi(); say("back to live"); }
+  else if (take && actx) { startLoop(actx.currentTime + 0.05); say("looping take"); }
+  else say("start the audio first");
+};
+addEventListener("keydown", (e) => {
+  if (e.key === "c" && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target as HTMLElement).closest("input, select, textarea")) doCapture();
+});
+
+const TKEY = "tangle.takes";
+const takeStore = (): Record<string, unknown> => { try { return JSON.parse(localStorage.getItem(TKEY) ?? "{}"); } catch { return {}; } };
+const saveTakeStore = (o: Record<string, unknown>) => { try { localStorage.setItem(TKEY, JSON.stringify(o)); return true; } catch { return false; } };
+const takeRow = html(`<div class="btns"><select aria-label="saved takes"></select><input type="text" placeholder="take name" size="10" aria-label="take name"><button type="button">save</button><button type="button">delete</button></div>`);
+takesCard.append(takeRow);
+const takeSel = takeRow.querySelector("select")!, takeName = takeRow.querySelector("input")!;
+const [saveTakeBtn, delTakeBtn] = Array.from(takeRow.querySelectorAll("button"));
+const refreshTakes = (pick = "") => {
+  takeSel.replaceChildren(new Option("takes…", ""), ...Object.keys(takeStore()).map((n) => new Option(n, n)));
+  takeSel.value = pick;
+};
+refreshTakes();
+takeSel.onchange = () => {
+  if (!takeSel.value) return;
+  const t = sanitizeTake(takeStore()[takeSel.value]);
+  if (!t) return say("couldn't load that take");
+  take = t; takePlay = null; setTakeUi();
+  takeName.value = takeSel.value;
+  say(`loaded ${takeSel.value} (${t.events.length} notes, ${t.len} s); press "loop take" to play it`);
+};
+saveTakeBtn.onclick = () => {
+  const n = takeName.value.trim();
+  if (!take) return say("capture a take first");
+  if (!n) return say("give the take a name first");
+  saveTakeStore({ ...takeStore(), [n]: take }) ? say(`saved take ${n}`) : say("couldn't save (storage blocked or full)");
+  refreshTakes(n);
+};
+delTakeBtn.onclick = () => {
+  if (!takeSel.value) return say("pick a take to delete");
+  const { [takeSel.value]: _gone, ...rest } = takeStore();
+  saveTakeStore(rest);
+  say(`deleted ${takeSel.value}`);
+  refreshTakes();
+};
 
 const space = section("Space", side);
 slider(space, "spatial déjà vu", R.spaceDejaVu, DEFAULTS.spaceDejaVu, () => p.spaceDejaVu, (v) => { p.spaceDejaVu = v; forget(); });
@@ -318,6 +386,7 @@ const go = document.getElementById("go") as HTMLButtonElement;
 go.onclick = async () => {
   if (stop) { stop(); stop = null; go.textContent = "start"; go.setAttribute("aria-pressed", "false"); return; }
   const ctx = new AudioContext({ sampleRate: 96000 }); // Braids' native rate
+  actx = ctx;
   await ctx.audioWorklet.addModule(workletUrl);
   const wasm = await (await fetch(wasmUrl)).arrayBuffer();
   // One worklet node (own wasm instance) per voice.
@@ -336,8 +405,16 @@ go.onclick = async () => {
   updatePanners();
   updateMix();
   await ctx.resume();
-  const stopRun = run(marbles(p, (i) => held === i), () => ctx.currentTime, (e) => {
+  const liveGen = marbles(p, (i) => held === i);
+  // The live generator keeps running while a take loops (its output is dropped), so going back to live carries on in time.
+  const pattern: Pattern = (from, to) => {
+    const ev = liveGen(from, to);
+    return takePlay ? takePlay(from, to).filter((e) => p.voices[e.voice ?? 0].on) : ev;
+  };
+  const stopRun = run(pattern, () => ctx.currentTime, (e) => {
     const i = e.voice ?? 0;
+    played.push(e);
+    if (played.length > 6000) played.splice(0, 2000);
     nodes[i].port.postMessage(e);
     if (e.pos) { // sequenced motion: move the voice at the note's start time, and show it on the pad when it happens
       const { az, el, dist } = e.pos, [x, y, z] = position(az, el, dist);
@@ -346,7 +423,7 @@ go.onclick = async () => {
       if (timers.length > 64) timers = timers.slice(-32); // old ones have fired long ago
     }
   });
-  stop = () => { stopRec(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); panners = []; gains = []; master = null; live.fill(null); drawPad(); ctx.close(); };
+  stop = () => { stopRec(); takePlay = null; actx = null; played.length = 0; setTakeUi(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); panners = []; gains = []; master = null; live.fill(null); drawPad(); ctx.close(); };
   go.textContent = "stop";
   go.setAttribute("aria-pressed", "true");
 };
