@@ -2,7 +2,7 @@
 import { run } from "./sequencer.ts";
 import { marbles, SCALES, type TParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
-import { DEFAULTS, MODELS, R } from "./presets.ts";
+import { DEFAULTS, MODELS, R, decode, encode, sanitize } from "./presets.ts";
 import workletUrl from "./braids/worklet.js?url";
 import wasmUrl from "./braids/braids.wasm?url";
 
@@ -58,6 +58,59 @@ p.voices.forEach((v, i) => {
   slider(s, "timbre", R.timbre, () => v.timbre, (x) => (v.timbre = x));
   slider(s, "color", R.color, () => v.color, (x) => (v.color = x));
 });
+
+// --- presets: saved in localStorage, shared as a URL hash ---
+const KEY = "tangle.presets";
+const store = (): Record<string, unknown> => { try { return JSON.parse(localStorage.getItem(KEY) ?? "{}"); } catch { return {}; } };
+const save = (o: Record<string, unknown>) => { try { localStorage.setItem(KEY, JSON.stringify(o)); return true; } catch { return false; } };
+
+// Voice objects are captured by their controls, so copy into them in place.
+const apply = (next: TParams) => {
+  const { voices, ...rest } = next;
+  Object.assign(p, rest);
+  p.voices.forEach((v, i) => Object.assign(v, voices[i]));
+  sync.forEach((f) => f());
+};
+
+const bar = document.getElementById("presets")!;
+bar.innerHTML = `<select id="saved" aria-label="saved presets"></select>
+  <input id="name" type="text" placeholder="preset name" aria-label="preset name" size="16">
+  <button id="save">save</button><button id="del">delete</button><button id="share">copy link</button>
+  <span id="status" role="status"></span>`;
+const saved = bar.querySelector("#saved") as HTMLSelectElement, name = bar.querySelector("#name") as HTMLInputElement;
+const status = bar.querySelector("#status")!;
+const say = (m: string) => (status.textContent = m);
+const refreshList = (pick = "") => {
+  saved.innerHTML = `<option value="">presets…</option>` + Object.keys(store()).map((n) => `<option>${n.replace(/[<&]/g, "")}</option>`).join("");
+  saved.value = pick;
+};
+refreshList();
+saved.onchange = () => {
+  if (!saved.value) return;
+  apply(sanitize(store()[saved.value]));
+  name.value = saved.value;
+  say(`loaded ${saved.value}`);
+};
+(bar.querySelector("#save") as HTMLElement).onclick = () => {
+  const n = name.value.trim().replace(/[<&]/g, "");
+  if (!n) return say("give it a name first");
+  save({ ...store(), [n]: structuredClone(p) }) ? say(`saved ${n}`) : say("couldn't save (storage blocked)");
+  refreshList(n);
+};
+(bar.querySelector("#del") as HTMLElement).onclick = () => {
+  const { [saved.value]: _gone, ...rest } = store();
+  if (!saved.value) return say("pick a preset to delete");
+  save(rest);
+  say(`deleted ${saved.value}`);
+  refreshList();
+};
+(bar.querySelector("#share") as HTMLElement).onclick = async () => {
+  location.hash = "p=" + encode(p);
+  try { await navigator.clipboard.writeText(location.href); say("link copied"); } catch { say("link is in the address bar"); }
+};
+const fromHash = location.hash.match(/^#p=(.+)$/)?.[1];
+const shared = fromHash && decode(fromHash);
+if (shared) { apply(shared); say("loaded shared preset"); }
 
 // --- audio ---
 let stop: (() => void) | null = null;
