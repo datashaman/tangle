@@ -3,11 +3,12 @@ import { run, type Ev, type Pattern } from "./sequencer.ts";
 import { randomize } from "./randomize.ts";
 import { delaySeconds, driveCurve, filterHz, filterQ, impulse, REVERB_NAMES, REVERB_SECONDS } from "./fx.ts";
 import { capture, sanitizeTake, takePattern, type Take } from "./takes.ts";
-import { CUSTOM, effectiveMask, marbles, SCALES, type TParams } from "./marbles.ts";
+import { CUSTOM, effectiveMask, GRAIN, marbles, SCALES, type TParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
 import { DEFAULTS, MODELS, R, decode, encode, sanitize } from "./presets.ts";
 import { plan, position, unplan } from "./space.ts";
 import workletUrl from "./braids/worklet.js?url";
+import grainUrl from "./grains.js?url";
 import wasmUrl from "./braids/braids.wasm?url";
 
 const p: TParams = structuredClone(DEFAULTS);
@@ -63,6 +64,8 @@ let timers: number[] = [];
 let gains: GainNode[] = []; // per-voice level
 let sends: { d: GainNode; r: GainNode }[] = []; // per-voice delay and reverb sends, taken after level and position
 let master: GainNode | null = null;
+let grainNode: AudioWorkletNode | null = null; // granular voice; its output level is a separate gain
+let grainOut: GainNode | null = null;
 // Effects: each voice goes dry to the master and, through its own send gains, into a shared tempo-synced delay and convolution reverb.
 type Fx = { delay: DelayNode; fb: GainNode; delayWet: GainNode; reverb: ConvolverNode; reverbWet: GainNode; irSize: number;
   driveDry: GainNode; driveWet: GainNode; chorusDry: GainNode; chorusWet: GainNode; lowpass: BiquadFilterNode; out: AudioNode }; // master chain: drive -> chorus -> filter
@@ -82,6 +85,7 @@ const updateMix = () => {
     s.d.gain.setTargetAtTime(p.voices[i].delaySend, s.d.context.currentTime, 0.015);
     s.r.gain.setTargetAtTime(p.voices[i].reverbSend, s.r.context.currentTime, 0.015);
   });
+  if (grainOut) grainOut.gain.setTargetAtTime(p.grain.level, grainOut.context.currentTime, 0.015);
   if (master) master.gain.setTargetAtTime(p.volume, master.context.currentTime, 0.015);
 };
 const updateFx = () => {
@@ -166,7 +170,9 @@ slider(rhythm, "length", R.length, DEFAULTS.length, () => p.length, (v) => (p.le
 }
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const pitch = section("Pitch");
+const pitchCol = html(`<div class="stack"></div>`); // Pitch and Grains share a cell
+app.append(pitchCol);
+const pitch = section("Pitch", pitchCol);
 select(pitch, "root", NOTES.map((n, i) => [String(48 + i), n]), String(DEFAULTS.root), () => String(p.root), (v) => { p.root = +v; sync.forEach((f) => f()); });
 select(pitch, "scale", [...Object.keys(SCALES), CUSTOM].map((s) => [s, s]), DEFAULTS.scale, () => p.scale, (v) => { p.scale = v; sync.forEach((f) => f()); }); // refresh the note buttons
 // Piano keyboard in fixed C..B order; lit keys are in the scale, the dot marks the root. Clicking a key toggles that
@@ -236,6 +242,18 @@ fxSlider(driveCol, "chorus", "chorusMix");
 fxSlider(filterCol, "cutoff", "filter");
 fxSlider(filterCol, "resonance", "filterRes");
 select(reverbCol, "size", REVERB_NAMES.map((n, i) => [String(i), n]), String(DEFAULTS.reverbSize), () => String(p.reverbSize), (v) => { p.reverbSize = +v; updateFx(); });
+
+const grainCard = section("Grains", pitchCol);
+grainCard.title = "A granular voice: grains cut from the last 4 seconds of what the voices played, one per pulse of the source voice";
+checkbox(grainCard, "on", () => p.grain.on, (v) => { p.grain.on = v; });
+select(grainCard, "source", [["0", "voice 1"], ["1", "voice 2"], ["2", "voice 3"]], "0", () => String(p.grain.source), (v) => { p.grain.source = +v; });
+const grainSlider = (label: string, key: "size" | "scatter" | "follow" | "spread" | "level", spec: readonly [number, number, number], hint: string) =>
+  slider(grainCard, label, spec, DEFAULTS.grain[key], () => p.grain[key], (v) => { p.grain[key] = v; if (key === "level") updateMix(); }, hint);
+grainSlider("size", "size", R.size, "grain length, 20 ms to 0.5 s");
+grainSlider("scatter", "scatter", R.scatter, "how far back in the buffer grains start; follows the spatial déjà vu loop");
+grainSlider("follow", "follow", R.follow, "how much grain pitch follows the source melody");
+grainSlider("spread", "spread", R.grainSpread, "stereo scatter of grains");
+grainSlider("level", "level", R.level, "granular voice level");
 
 // --- takes: grab what just played (retroactively), loop it exactly, save it ---
 const played: Ev[] = []; // every event handed to a voice, in AudioContext time: the retroactive buffer
@@ -463,6 +481,7 @@ go.onclick = async () => {
   const ctx = new AudioContext({ sampleRate: 96000 }); // Braids' native rate
   actx = ctx;
   await ctx.audioWorklet.addModule(workletUrl);
+  await ctx.audioWorklet.addModule(grainUrl);
   const wasm = await (await fetch(wasmUrl)).arrayBuffer();
   // One worklet node (own wasm instance) per voice.
   const nodes = [0, 1, 2].map(() => {
@@ -504,6 +523,10 @@ go.onclick = async () => {
     pn.connect(r).connect(reverb);
     return { d, r };
   });
+  grainNode = new AudioWorkletNode(ctx, "grains", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+  grainOut = new GainNode(ctx);
+  grainNode.connect(grainOut).connect(master);
+  panners.forEach((pn) => pn.connect(grainNode!)); // the grain buffer hears every voice, after level and position
   updatePanners();
   updateMix();
   updateFx();
@@ -512,13 +535,13 @@ go.onclick = async () => {
   // The live generator keeps running while a take loops (its output is dropped), so going back to live carries on in time.
   const pattern: Pattern = (from, to) => {
     const ev = liveGen(from, to);
-    return takePlay ? takePlay(from, to).filter((e) => p.voices[e.voice ?? 0].on) : ev;
+    return takePlay ? takePlay(from, to).filter((e) => (e.voice === GRAIN ? p.grain.on : p.voices[e.voice ?? 0].on)) : ev;
   };
   const stopRun = run(pattern, () => ctx.currentTime, (e) => {
     const i = e.voice ?? 0;
     played.push(e);
     if (played.length > 6000) played.splice(0, 2000);
-    nodes[i].port.postMessage(e);
+    (i === GRAIN ? grainNode! : nodes[i]).port.postMessage(e);
     if (e.pos) { // sequenced motion: move the voice at the note's start time, and show it on the pad when it happens
       const { az, el, dist } = e.pos, [x, y, z] = position(az, el, dist);
       panners[i].positionX.setValueAtTime(x, e.time); panners[i].positionY.setValueAtTime(y, e.time); panners[i].positionZ.setValueAtTime(z, e.time);
@@ -526,7 +549,7 @@ go.onclick = async () => {
       if (timers.length > 64) timers = timers.slice(-32); // old ones have fired long ago
     }
   });
-  stop = () => { stopRec(); takePlay = null; actx = null; played.length = 0; setTakeUi(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); panners = []; gains = []; sends = []; master = null; fx = null; live.fill(null); drawPad(); ctx.close(); };
+  stop = () => { stopRec(); takePlay = null; actx = null; played.length = 0; setTakeUi(); stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); grainNode = null; grainOut = null; panners = []; gains = []; sends = []; master = null; fx = null; live.fill(null); drawPad(); ctx.close(); };
   go.textContent = "stop";
   go.setAttribute("aria-pressed", "true");
 };
