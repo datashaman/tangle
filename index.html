@@ -2,6 +2,14 @@
 <meta charset="utf-8">
 <title>tangle</title>
 <button id="go">start</button>
+<select id="model">
+  <option value="bernoulli">complementary bernoulli</option>
+  <option value="independent">independent bernoulli</option>
+  <option value="threeStates">three states</option>
+  <option value="drums">drums</option>
+  <option value="markov">markov</option>
+</select>
+<label>bias <input id="bias" type="range" min="0" max="1" step="0.01" value="0.5"></label>
 <label>déjà vu <input id="dv" type="range" min="0" max="1" step="0.01" value="0.5"></label>
 <label>length <input id="len" type="range" min="1" max="16" step="1" value="8"></label>
 <script type="module" src="/src/main.ts"></script>

@@ -2,7 +2,7 @@
 // a 16-slot loop of random values. dejaVu=0 always draws new values, 0.5 locks the loop,
 // 1 jumps randomly within the loop. Below 0.5 mutation writes new values; above it only shuffles order.
 // Omitted: replay/rewrite history (multi-channel locking, external input).
-import type { Pattern } from "./sequencer.ts";
+import type { Ev, Pattern } from "./sequencer.ts";
 
 const N = 16;
 export type DejaVu = { dejaVu: number; length: number }; // mutable: change live from the UI
@@ -37,17 +37,92 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
   };
 }
 
-// Stateful: advances one stream value per clock step, so windows must arrive in order (run() does).
-// ponytail: fixed clock, minor-pentatonic quantizer; Marbles' t-generator (rhythm models) is the next piece.
-export const marbles = (p: DejaVu, seed = 1, step = 0.25, root = 48): Pattern => {
+// Port of Marbles' "t" generator (marbles/random/t_generator.cc): on each clock tick, draw a random vector
+// from a déjà vu stream and let a model decide which of the 2 channels fire. Returns a bitmask per tick.
+// Omitted: clusters and divider models (need the ramp/divider machinery), clock jitter, pulse-width randomness.
+export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov";
+export type TParams = DejaVu & { bias: number; model: TModel };
+
+export const DRUMS = [
+  [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],
+  [1, 0, 1, 0, 2, 0, 1, 0], [0, 2, 1, 0, 2, 0, 0, 2], [1, 0, 0, 0, 2, 0, 1, 0], [0, 2, 1, 0, 2, 0, 1, 2],
+  [1, 0, 0, 1, 2, 0, 0, 0], [0, 2, 1, 1, 2, 0, 1, 2], [1, 0, 0, 1, 2, 0, 1, 0], [0, 2, 1, 1, 2, 2, 1, 2],
+  [1, 0, 0, 1, 2, 0, 1, 2], [0, 2, 0, 1, 2, 0, 1, 2], [1, 0, 1, 1, 2, 0, 1, 2], [2, 0, 1, 2, 0, 1, 2, 0],
+  [1, 2, 1, 1, 2, 0, 1, 2], [2, 0, 1, 2, 0, 1, 2, 2],
+];
+
+export function tStream(seed: number, p: TParams): () => number {
   const next = dejaVuStream(seed, p);
+  let drumStep = 8, drumIdx = 0, ptr = 0;
+  const hist = new Array(16).fill(0), streak = [0, 0];
+  return () => {
+    // Marbles' NextVector: one stream value seeds an LCG that expands into the 6-float vector.
+    let word = Math.floor(next() * 2 ** 32) >>> 0;
+    const x = Array.from({ length: 6 }, () => {
+      const v = word / 2 ** 32;
+      word = (Math.imul(word, 1664525) + 1013904223) >>> 0;
+      return v;
+    });
+    const u = [x[2], x[3]], pr = x[4], b = p.bias;
+    let mask = 0;
+    if (p.model === "bernoulli") {
+      for (let i = 0; i < 2; i++) if (((u[0] > b ? 1 : 0) ^ (i & 1)) === 1) mask |= 1 << i;
+    } else if (p.model === "independent") {
+      for (let i = 0; i < 2; i++) if (((u[i] > b ? 1 : 0) ^ (i & 1)) === 1) mask |= 1 << i;
+    } else if (p.model === "threeStates") {
+      const pNone = 0.75 - Math.abs(b - 0.5);
+      const thr = pNone + (1 - pNone) * (0.25 + b * 0.5);
+      for (let i = 0; i < 2; i++) if (u[0] > pNone && (((u[0] > thr ? 1 : 0) ^ (i & 1)) === 1)) mask |= 1 << i;
+    } else if (p.model === "drums") {
+      if (++drumStep >= 8) {
+        drumStep = 0;
+        drumIdx = Math.floor(DRUMS.length * u[0] * 2 * Math.abs(b - 0.5));
+        if (b <= 0.5) drumIdx -= drumIdx % 2;
+      }
+      mask = DRUMS[drumIdx][drumStep];
+    } else {
+      const bb = 1.5 * b - 0.5, len = Math.min(16, Math.max(1, Math.round(p.length)));
+      hist[ptr] = 0;
+      for (let i = 0; i < 2; i++) {
+        const m = 1 << i;
+        const periodic = hist[(ptr + 8) % 16] & m, simultaneous = hist[(ptr + 8) % 16] & ~m;
+        const dense = hist[(ptr + 1) % 16] & m, alternate = hist[(ptr + 4) % 16] & ~m;
+        let logit = -1.5;
+        if (streak[i] > 24) logit += 10;
+        logit += 8 * Math.abs(bb) * (periodic ? bb : -bb);
+        logit -= 2 * (simultaneous ? bb : -bb);
+        logit -= dense ? bb : 0;
+        logit += alternate ? bb : 0;
+        logit = Math.min(10, Math.max(-10, logit));
+        let state = u[i] < 1 / (1 + 2 ** -logit); // Marbles' lut_logit, fits this to 2e-4
+        if (p.dejaVu >= pr) state = (hist[(ptr + len) % 16] & m) !== 0;
+        if (state) { mask |= m; streak[i] = 0; } else streak[i]++;
+      }
+      hist[ptr] |= mask;
+      ptr = (ptr + 15) % 16;
+    }
+    return mask;
+  };
+}
+
+// Stateful: advances one tick per step, so windows must arrive in order (run() does).
+// Channel 0/1 -> voice 0/1; each draws its pitch from its own déjà vu stream (Marbles' X outputs).
+// ponytail: fixed clock, minor-pentatonic quantizer.
+export const marbles = (p: TParams, seed = 1, step = 0.25, root = 48): Pattern => {
+  const t = tStream(seed, p);
+  const x = [dejaVuStream(seed + 1, p), dejaVuStream(seed + 2, p)];
   const scale = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22];
   let i: number | undefined;
   return (from, to) => {
     i ??= Math.ceil(from / step);
-    const out = [];
+    const out: Ev[] = [];
     for (; i * step < to; i++) {
-      out.push({ time: i * step, pitch: root + scale[Math.floor(next() * scale.length)], dur: step * 0.8 });
+      const mask = t();
+      for (let ch = 0; ch < 2; ch++) {
+        if (mask >> ch & 1) {
+          out.push({ time: i * step, pitch: root + 12 * ch + scale[Math.floor(x[ch]() * scale.length)], dur: step * 0.5, voice: ch, params: { shape: ch ? 3 : 0 } });
+        }
+      }
     }
     return out;
   };

@@ -20,3 +20,28 @@ test("dejaVu 1 only reorders: values come from the existing loop", () => {
   const loop = new Set(take(4, dejaVuStream(7, { dejaVu: 0.5, length: 4 })));
   for (const v of take(50, dejaVuStream(7, { dejaVu: 1, length: 4 }))) assert.ok(loop.has(v));
 });
+
+import { tStream, DRUMS, type TModel } from "./marbles.ts";
+const T = (model: TModel, bias: number, dejaVu = 0, length = 8) => ({ model, bias, dejaVu, length });
+
+test("t: complementary bernoulli fires exactly one channel; bias extremes pin it", () => {
+  for (const m of take(64, tStream(3, T("bernoulli", 0.5)))) assert.ok(m === 1 || m === 2);
+  assert.ok(take(32, tStream(3, T("bernoulli", 0))).every((m) => m === 1));
+});
+
+test("t: independent bernoulli bias 1 is never ch0, always ch1", () => {
+  assert.ok(take(32, tStream(3, T("independent", 1))).every((m) => m === 2));
+});
+
+test("t: drums plays one of the even patterns when bias <= 0.5", () => {
+  const got = take(8, tStream(3, T("drums", 0)));
+  assert.ok(DRUMS.some((d, i) => i % 2 === 0 && d.every((v, k) => v === got[k])));
+});
+
+test("t: dejaVu 0.5 loops the rhythm; markov is reproducible", () => {
+  const r = take(24, tStream(5, T("threeStates", 0.5, 0.5, 4)));
+  assert.deepEqual(r.slice(0, 4), r.slice(4, 8));
+  const a = take(64, tStream(5, T("markov", 0.5)));
+  assert.deepEqual(a, take(64, tStream(5, T("markov", 0.5))));
+  assert.ok(a.every((m) => m >= 0 && m <= 3) && a.some((m) => m > 0));
+});
