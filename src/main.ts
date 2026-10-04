@@ -71,7 +71,12 @@ slider(pitch, "spread", R.spread, DEFAULTS.spread, () => p.spread, (v) => (p.spr
 slider(pitch, "bias", R.pitchBias, DEFAULTS.pitchBias, () => p.pitchBias, (v) => (p.pitchBias = v));
 
 p.voices.forEach((v, i) => {
-  const s = section(`Voice ${i + 1}`);
+  const s = section(i === 2 ? "Voice 3 · every tick" : `Voice ${i + 1}`);
+  const on = html(`<label><input type="checkbox"> on</label>`);
+  const box = on.querySelector("input")!;
+  box.onchange = () => (v.on = box.checked);
+  sync.push(() => (box.checked = v.on)); box.checked = v.on;
+  s.append(on);
   select(s, "shape", SHAPES.map((n, k) => [String(k), n]), String(DEFAULTS.voices[i].shape), () => String(v.shape), (x) => (v.shape = +x));
   slider(s, "timbre", R.timbre, DEFAULTS.voices[i].timbre, () => v.timbre, (x) => (v.timbre = x));
   slider(s, "color", R.color, DEFAULTS.voices[i].color, () => v.color, (x) => (v.color = x));
@@ -138,8 +143,8 @@ go.onclick = async () => {
   const ctx = new AudioContext({ sampleRate: 96000 }); // Braids' native rate
   await ctx.audioWorklet.addModule(workletUrl);
   const wasm = await (await fetch(wasmUrl)).arrayBuffer();
-  // One worklet node (own wasm instance) per Marbles t channel.
-  const nodes = [0, 1].map(() => {
+  // One worklet node (own wasm instance) per voice.
+  const nodes = [0, 1, 2].map(() => {
     const n = new AudioWorkletNode(ctx, "braids", { processorOptions: { wasm } });
     n.connect(ctx.destination);
     return n;

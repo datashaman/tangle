@@ -4,7 +4,7 @@ import { DEFAULTS, decode, encode, sanitize } from "./presets.ts";
 
 test("preset survives a share-link round trip", () => {
   const p = { ...structuredClone(DEFAULTS), model: "drums" as const, scale: "blues", jitter: 0.4, root: 53, length: 5 };
-  p.voices[1] = { shape: 33, timbre: 0.1, color: 0.9 };
+  p.voices[1] = { shape: 33, timbre: 0.1, color: 0.9, on: false };
   assert.deepEqual(decode(encode(p)), p);
 });
 
@@ -27,4 +27,11 @@ test("seed round-trips and is clamped", () => {
   assert.equal(decode(encode({ ...DEFAULTS, seed: 4242 }))!.seed, 4242);
   assert.equal(sanitize({ seed: -5 }).seed, 1);
   assert.equal(sanitize({ seed: 1e12 }).seed, 999999);
+});
+
+test("old two-voice links still load; voice 3 defaults to off", () => {
+  const old = { voices: [{ shape: 7 }, { shape: 8 }] };
+  const s = sanitize(old);
+  assert.equal(s.voices[2].on, false);
+  assert.equal(s.voices[0].shape, 7);
 });

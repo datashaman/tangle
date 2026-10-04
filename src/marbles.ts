@@ -42,9 +42,9 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
 // phase (0..1) within the tick; clusters/divider make real polyrhythms, the other models only fire on the tick (phase 0).
 // Omitted: pulse-width randomness, external clock, reset.
 export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov" | "clusters" | "divider";
-export type VoiceParams = { shape: number; timbre: number; color: number }; // Braids, timbre/color 0..1
+export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean }; // Braids, timbre/color 0..1
 export type TCore = DejaVu & { bias: number; model: TModel };
-export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; voices: [VoiceParams, VoiceParams] };
+export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; voices: [VoiceParams, VoiceParams, VoiceParams] };
 
 export const DRUMS = [
   [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],
@@ -239,6 +239,8 @@ export function xValue(u: number, spread: number, bias: number): number {
   return value;
 }
 
+const OCTAVE = [0, 12, -12]; // per-voice transposition: voice 2 an octave up, voice 3 (master clock) an octave down
+
 // Scale degrees in semitones within one octave; the quantizer spans two octaves.
 // ponytail: fixed presets; Marbles' own quantizer has recordable scales and per-degree weights.
 export const SCALES: Record<string, number[]> = {
@@ -258,12 +260,13 @@ export const SCALES: Record<string, number[]> = {
 };
 
 // Stateful: advances one tick per step, so windows must arrive in order (run() does).
-// Channel 0/1 -> voice 0/1; each draws its pitch from its own déjà vu stream (Marbles' X outputs).
+// Channel 0/1 -> voice 0/1 (t1/t3), channel 2 -> voice 3 on the master clock (t2). Muted voices still advance their
+// streams, as on the hardware. Each draws its pitch from its own déjà vu stream (Marbles' X outputs).
 // Scale and root are read per note, so they can change live; a rate change takes effect from the next tick.
 export const marbles = (p: TParams): Pattern => {
   // Streams are rebuilt whenever p.seed changes, so reseeding works live.
   let seed = p.seed;
-  const build = () => ({ t: tStream(seed, p), x: [dejaVuStream(seed + 1, p), dejaVuStream(seed + 2, p)] });
+  const build = () => ({ t: tStream(seed, p), x: [1, 2, 3].map((k) => dejaVuStream(seed + k, p)) });
   let { t, x } = build();
   let at: number | undefined; // next tick time; p.step may change live, so accumulate instead of i * step
   let phaseDiff = 0; // how far the jittered clock has drifted from the straight one (in ticks)
@@ -272,7 +275,8 @@ export const marbles = (p: TParams): Pattern => {
     at ??= from;
     const out: Ev[] = [];
     while (at < to) {
-      const { pulses, jitter } = t();
+      const { pulses: gen, jitter } = t();
+      const pulses = [...gen, { ch: 2, phase: 0, period: 1 }]; // master clock (Marbles' t2)
       // Marbles' jitter: random tempo multiplier of up to +-j^4*36 semitones, nudged back toward the straight clock.
       const semis = (fastBeta(jitter) * 2 - 1) * p.jitter ** 4 * 36;
       const mult = 2 ** (semis / 12) * (phaseDiff > 0 ? 1 + phaseDiff : 1 / (1 - phaseDiff));
@@ -282,7 +286,9 @@ export const marbles = (p: TParams): Pattern => {
       const notes = [...deg, ...deg.map((d) => d + 12)]; // two octaves
       const degree = (v: number) => notes[Math.floor(xValue(v, p.spread, p.pitchBias) * notes.length)];
       for (const { ch, phase, period } of pulses) {
-        out.push({ time: at + phase * dt, pitch: p.root + 12 * ch + degree(x[ch]()), dur: Math.min(1, period) * dt * 0.5, voice: ch, params: { ...p.voices[ch] } });
+        const pitch = p.root + OCTAVE[ch] + degree(x[ch]());
+        const { on, ...params } = p.voices[ch];
+        if (on) out.push({ time: at + phase * dt, pitch, dur: Math.min(1, period) * dt * 0.5, voice: ch, params });
       }
       at += dt;
     }

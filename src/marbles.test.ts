@@ -49,7 +49,7 @@ test("t: dejaVu 0.5 loops the rhythm; markov is reproducible", () => {
 
 import { marbles } from "./marbles.ts";
 test("marbles: live step change keeps events ordered and windows contiguous", () => {
-  const p = { ...T("independent", 0.5), step: 0.25, jitter: 0, scale: "chromatic", root: 48, spread: 0.75, pitchBias: 0.5, voices: [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any] };
+  const p = { ...T("independent", 0.5), step: 0.25, jitter: 0, scale: "chromatic", root: 48, spread: 0.75, pitchBias: 0.5, voices: [{ shape: 0, timbre: 0.5, color: 0.5, on: true }, { shape: 3, timbre: 0.5, color: 0.5, on: true }, { shape: 5, timbre: 0.5, color: 0.5, on: false }] as [any, any, any] };
   const pat = marbles(p);
   const ev = [...pat(0, 1)];
   p.step = 0.1;
@@ -61,7 +61,7 @@ test("marbles: live step change keeps events ordered and windows contiguous", ()
 });
 
 test("jitter 0 is an exact grid; jitter 1 wanders but stays near the straight clock", () => {
-  const voices = [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any];
+  const voices = [{ shape: 0, timbre: 0.5, color: 0.5, on: true }, { shape: 3, timbre: 0.5, color: 0.5, on: true }, { shape: 5, timbre: 0.5, color: 0.5, on: false }] as [any, any, any];
   const times = (jitter: number) => marbles({ ...T("independent", 0), step: 0.25, jitter, scale: "chromatic", root: 48, spread: 0.75, pitchBias: 0.5, voices })(0, 100).filter((e) => e.voice === 0).map((e) => e.time);
   assert.deepEqual(times(0).slice(0, 5), [0, 0.25, 0.5, 0.75, 1]);
   const t = times(1), grid = t.map((_, i) => i * 0.25);
@@ -93,7 +93,7 @@ test("t: divider bias 0 is 8:(1/8) over 8 ticks; centre is 1:1; clusters at cent
 
 import { SCALES } from "./marbles.ts";
 test("marbles: pitches stay inside the chosen scale and root", () => {
-  const voices = [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any];
+  const voices = [{ shape: 0, timbre: 0.5, color: 0.5, on: true }, { shape: 3, timbre: 0.5, color: 0.5, on: true }, { shape: 5, timbre: 0.5, color: 0.5, on: false }] as [any, any, any];
   const base = { ...T("independent", 0.5, 0), step: 0.25, jitter: 0, spread: 0.75, pitchBias: 0.5, voices };
   const pitches = (scale: string, root: number) => marbles({ ...base, scale, root })(0, 200).map((e) => e.pitch - e.voice! * 12);
   for (const [name, deg] of Object.entries(SCALES)) {
@@ -122,7 +122,7 @@ test("xValue: spread 0.75/bias 0.5 is uniform; spread 0 pins to bias; spread 1 i
 });
 
 test("marbles: changing p.seed mid-run reseeds; same seed reproduces", () => {
-  const voices = [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any];
+  const voices = [{ shape: 0, timbre: 0.5, color: 0.5, on: true }, { shape: 3, timbre: 0.5, color: 0.5, on: true }, { shape: 5, timbre: 0.5, color: 0.5, on: false }] as [any, any, any];
   const mk = (seed: number) => ({ ...T("independent", 0.5, 0), step: 0.25, jitter: 0, scale: "chromatic", root: 48, spread: 0.75, pitchBias: 0.5, voices, seed });
   const pitches = (p: any) => marbles(p)(0, 30).map((e) => e.pitch);
   assert.deepEqual(pitches(mk(1)), pitches(mk(1)));
@@ -130,4 +130,15 @@ test("marbles: changing p.seed mid-run reseeds; same seed reproduces", () => {
   const live = mk(1), pat = marbles(live);
   pat(0, 10); live.seed = 2;
   assert.deepEqual(pat(10, 40).map((e) => e.pitch), marbles(mk(2))(10, 40).map((e) => e.pitch));
+});
+
+test("voice 3 plays every tick an octave down; muting it changes nothing else", () => {
+  const mk = (on: boolean) => ({ ...T("independent", 0.5, 0), step: 0.25, jitter: 0, scale: "chromatic", root: 60, spread: 0.75, pitchBias: 0.5,
+    voices: [{ shape: 0, timbre: 0.5, color: 0.5, on: true }, { shape: 3, timbre: 0.5, color: 0.5, on: true }, { shape: 5, timbre: 0.5, color: 0.5, on }] as [any, any, any] });
+  const off = marbles(mk(false))(0, 10), on = marbles(mk(true))(0, 10);
+  assert.ok(off.every((e) => e.voice !== 2));
+  const v3 = on.filter((e) => e.voice === 2);
+  assert.equal(v3.length, 40); // 10s / 0.25s
+  assert.ok(v3.every((e) => e.pitch >= 48 && e.pitch < 72)); // root 60 - 12, plus a two-octave scale
+  assert.deepEqual(on.filter((e) => e.voice !== 2), off); // same notes for voices 1+2: streams advance while muted
 });

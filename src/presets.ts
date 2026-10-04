@@ -15,7 +15,10 @@ export const R = {
 export const DEFAULTS: TParams = {
   dejaVu: 0.5, length: 8, bias: 0.5, model: "bernoulli", step: 0.25, jitter: 0,
   scale: "minor pentatonic", root: 48, spread: 0.75, pitchBias: 0.5, seed: 1, // spread 0.75 / bias 0.5 = uniform pitches
-  voices: [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }],
+  voices: [
+    { shape: 0, timbre: 0.5, color: 0.5, on: true }, { shape: 3, timbre: 0.5, color: 0.5, on: true },
+    { shape: 5, timbre: 0.5, color: 0.5, on: false }, // master clock voice, off until asked for
+  ],
 };
 
 const num = (v: unknown, [lo, hi]: readonly [number, number, number], fallback: number) =>
@@ -25,6 +28,7 @@ export function sanitize(raw: unknown, base: TParams = DEFAULTS): TParams {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, any>;
   const voice = (v: any, b: VoiceParams): VoiceParams => ({
     shape: Math.round(num(v?.shape, R.shape, b.shape)), timbre: num(v?.timbre, R.timbre, b.timbre), color: num(v?.color, R.color, b.color),
+    on: typeof v?.on === "boolean" ? v.on : b.on,
   });
   return {
     dejaVu: num(r.dejaVu, R.dejaVu, base.dejaVu), length: Math.round(num(r.length, R.length, base.length)),
@@ -33,7 +37,7 @@ export function sanitize(raw: unknown, base: TParams = DEFAULTS): TParams {
     scale: typeof r.scale === "string" && Object.hasOwn(SCALES, r.scale) ? r.scale : base.scale,
     root: Math.round(num(r.root, R.root, base.root)), spread: num(r.spread, R.spread, base.spread),
     pitchBias: num(r.pitchBias, R.pitchBias, base.pitchBias), seed: Math.round(num(r.seed, R.seed, base.seed)),
-    voices: [voice(r.voices?.[0], base.voices[0]), voice(r.voices?.[1], base.voices[1])],
+    voices: [0, 1, 2].map((i) => voice(r.voices?.[i], base.voices[i])) as TParams["voices"],
   };
 }
 
