@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { run } from "./sequencer.ts";
-import { marbles, SCALES, type TParams } from "./marbles.ts";
+import { CUSTOM, effectiveMask, marbles, SCALES, type TParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
 import { DEFAULTS, MODELS, R, decode, encode, sanitize } from "./presets.ts";
 import workletUrl from "./braids/worklet.js?url";
@@ -65,8 +65,32 @@ slider(rhythm, "length", R.length, DEFAULTS.length, () => p.length, (v) => (p.le
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const pitch = section("Pitch");
-select(pitch, "root", NOTES.map((n, i) => [String(48 + i), n]), String(DEFAULTS.root), () => String(p.root), (v) => (p.root = +v));
-select(pitch, "scale", Object.keys(SCALES).map((s) => [s, s]), DEFAULTS.scale, () => p.scale, (v) => (p.scale = v));
+select(pitch, "root", NOTES.map((n, i) => [String(48 + i), n]), String(DEFAULTS.root), () => String(p.root), (v) => { p.root = +v; sync.forEach((f) => f()); });
+select(pitch, "scale", [...Object.keys(SCALES), CUSTOM].map((s) => [s, s]), DEFAULTS.scale, () => p.scale, (v) => (p.scale = v));
+// Note toggles, labelled with real note names for the current root. Editing a preset scale copies it into "custom".
+{
+  const keys = html(`<div role="group" aria-label="scale notes" style="display:grid;grid-template-columns:repeat(12,1fr);gap:2px;margin-bottom:10px"></div>`);
+  const btns = NOTES.map((_, d) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.style.padding = "4px 0";
+    b.onclick = () => {
+      const cur = effectiveMask(p), next = cur ^ (1 << d);
+      if (next) { p.mask = next; p.scale = CUSTOM; sync.forEach((f) => f()); } // never allow an empty scale
+    };
+    keys.append(b);
+    return b;
+  });
+  sync.push(() => btns.forEach((b, d) => {
+    const on = (effectiveMask(p) >> d & 1) === 1;
+    b.textContent = NOTES[(p.root - 48 + d) % 12];
+    b.setAttribute("aria-pressed", String(on));
+    b.style.background = on ? "var(--accent)" : "var(--bg)";
+    b.style.color = on ? "var(--on-accent)" : "var(--fg)";
+  }));
+  sync[sync.length - 1]();
+  pitch.append(keys);
+}
 slider(pitch, "spread", R.spread, DEFAULTS.spread, () => p.spread, (v) => (p.spread = v));
 slider(pitch, "bias", R.pitchBias, DEFAULTS.pitchBias, () => p.pitchBias, (v) => (p.pitchBias = v));
 

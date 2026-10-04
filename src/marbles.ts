@@ -44,7 +44,7 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
 export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov" | "clusters" | "divider";
 export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean }; // Braids, timbre/color 0..1
 export type TCore = DejaVu & { bias: number; model: TModel };
-export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; voices: [VoiceParams, VoiceParams, VoiceParams] };
+export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; voices: [VoiceParams, VoiceParams, VoiceParams] };
 
 export const DRUMS = [
   [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],
@@ -242,7 +242,7 @@ export function xValue(u: number, spread: number, bias: number): number {
 const OCTAVE = [0, 12, -12]; // per-voice transposition: voice 2 an octave up, voice 3 (master clock) an octave down
 
 // Scale degrees in semitones within one octave; the quantizer spans two octaves.
-// ponytail: fixed presets; Marbles' own quantizer has recordable scales and per-degree weights.
+// ponytail: presets plus one user-editable scale (`mask`); Marbles' quantizer also weights each degree.
 export const SCALES: Record<string, number[]> = {
   "minor pentatonic": [0, 3, 5, 7, 10],
   "major pentatonic": [0, 2, 4, 7, 9],
@@ -257,6 +257,15 @@ export const SCALES: Record<string, number[]> = {
   "whole tone": [0, 2, 4, 6, 8, 10],
   "diminished": [0, 2, 3, 5, 6, 8, 9, 11],
   "chromatic": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+};
+
+// "custom" scale: a 12-bit mask of semitones above the root, edited from the UI.
+export const CUSTOM = "custom";
+export const maskOf = (deg: number[]) => deg.reduce((m, d) => m | (1 << d), 0);
+export const effectiveMask = (p: Pick<TParams, "scale" | "mask">) => (p.scale === CUSTOM ? p.mask : maskOf(SCALES[p.scale] ?? SCALES.chromatic));
+export const scaleDegrees = (p: Pick<TParams, "scale" | "mask">) => {
+  const deg = [...Array(12).keys()].filter((d) => effectiveMask(p) >> d & 1);
+  return deg.length ? deg : [0]; // an empty mask would have nothing to play
 };
 
 // Stateful: advances one tick per step, so windows must arrive in order (run() does).
@@ -282,7 +291,7 @@ export const marbles = (p: TParams): Pattern => {
       const mult = 2 ** (semis / 12) * (phaseDiff > 0 ? 1 + phaseDiff : 1 / (1 - phaseDiff));
       phaseDiff += 1 / mult - 1;
       const dt = p.step / mult; // length of this tick; pulses are placed by phase inside it
-      const deg = SCALES[p.scale] ?? SCALES.chromatic;
+      const deg = scaleDegrees(p);
       const notes = [...deg, ...deg.map((d) => d + 12)]; // two octaves
       const degree = (v: number) => notes[Math.floor(xValue(v, p.spread, p.pitchBias) * notes.length)];
       for (const { ch, phase, period } of pulses) {

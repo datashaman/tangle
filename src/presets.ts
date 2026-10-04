@@ -1,6 +1,6 @@
 // Defaults, valid ranges and (de)serialization for the whole parameter set. Anything loaded from a URL or storage is
 // untrusted: sanitize() rebuilds a fresh, clamped object, so e.g. step=0 can never reach the scheduler loop.
-import { SCALES, type TModel, type TParams, type VoiceParams } from "./marbles.ts";
+import { CUSTOM, SCALES, maskOf, type TModel, type TParams, type VoiceParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
 
 export const MODELS: TModel[] = ["bernoulli", "independent", "threeStates", "drums", "markov", "clusters", "divider"];
@@ -8,13 +8,13 @@ export const MODELS: TModel[] = ["bernoulli", "independent", "threeStates", "dru
 // [min, max, step]: the slider specs and the clamp limits in one place.
 export const R = {
   dejaVu: [0, 1, 0.01], length: [1, 16, 1], bias: [0, 1, 0.01], step: [0.05, 0.5, 0.01], jitter: [0, 1, 0.01],
-  spread: [0, 1, 0.01], pitchBias: [0, 1, 0.01], root: [48, 59, 1], seed: [1, 999999, 1],
+  spread: [0, 1, 0.01], pitchBias: [0, 1, 0.01], root: [48, 59, 1], seed: [1, 999999, 1], mask: [1, 4095, 1],
   shape: [0, SHAPES.length - 1, 1], timbre: [0, 1, 0.01], color: [0, 1, 0.01],
 } as const;
 
 export const DEFAULTS: TParams = {
   dejaVu: 0.5, length: 8, bias: 0.5, model: "bernoulli", step: 0.25, jitter: 0,
-  scale: "minor pentatonic", root: 48, spread: 0.75, pitchBias: 0.5, seed: 1, // spread 0.75 / bias 0.5 = uniform pitches
+  scale: "minor pentatonic", root: 48, spread: 0.75, pitchBias: 0.5, seed: 1, mask: maskOf(SCALES["minor pentatonic"]), // spread 0.75 / bias 0.5 = uniform pitches
   voices: [
     { shape: 0, timbre: 0.5, color: 0.5, on: true }, { shape: 3, timbre: 0.5, color: 0.5, on: true },
     { shape: 5, timbre: 0.5, color: 0.5, on: false }, // master clock voice, off until asked for
@@ -34,9 +34,9 @@ export function sanitize(raw: unknown, base: TParams = DEFAULTS): TParams {
     dejaVu: num(r.dejaVu, R.dejaVu, base.dejaVu), length: Math.round(num(r.length, R.length, base.length)),
     bias: num(r.bias, R.bias, base.bias), model: MODELS.includes(r.model) ? r.model : base.model,
     step: num(r.step, R.step, base.step), jitter: num(r.jitter, R.jitter, base.jitter),
-    scale: typeof r.scale === "string" && Object.hasOwn(SCALES, r.scale) ? r.scale : base.scale,
+    scale: typeof r.scale === "string" && (r.scale === CUSTOM || Object.hasOwn(SCALES, r.scale)) ? r.scale : base.scale,
     root: Math.round(num(r.root, R.root, base.root)), spread: num(r.spread, R.spread, base.spread),
-    pitchBias: num(r.pitchBias, R.pitchBias, base.pitchBias), seed: Math.round(num(r.seed, R.seed, base.seed)),
+    pitchBias: num(r.pitchBias, R.pitchBias, base.pitchBias), seed: Math.round(num(r.seed, R.seed, base.seed)), mask: Math.round(num(r.mask, R.mask, base.mask)),
     voices: [0, 1, 2].map((i) => voice(r.voices?.[i], base.voices[i])) as TParams["voices"],
   };
 }

@@ -35,3 +35,11 @@ test("old two-voice links still load; voice 3 defaults to off", () => {
   assert.equal(s.voices[2].on, false);
   assert.equal(s.voices[0].shape, 7);
 });
+
+test("custom scale name and mask are accepted and clamped", () => {
+  const s = sanitize({ scale: "custom", mask: 0b101 });
+  assert.equal(s.scale, "custom");
+  assert.equal(s.mask, 5);
+  assert.equal(sanitize({ mask: 0 }).mask, 1);
+  assert.equal(sanitize({ mask: 1e9 }).mask, 4095);
+});
