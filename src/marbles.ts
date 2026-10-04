@@ -39,11 +39,11 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
 
 // Port of Marbles' "t" generator (marbles/random/t_generator.cc): on each clock tick, draw a random vector
 // from a déjà vu stream and let a model decide which of the 2 channels fire. Returns a bitmask per tick.
-// Omitted: clusters and divider models (need the ramp/divider machinery), clock jitter, pulse-width randomness.
+// Omitted: clusters and divider models (need the ramp/divider machinery), pulse-width randomness.
 export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov";
 export type VoiceParams = { shape: number; timbre: number; color: number }; // Braids, timbre/color 0..1
 export type TCore = DejaVu & { bias: number; model: TModel };
-export type TParams = TCore & { step: number; voices: [VoiceParams, VoiceParams] };
+export type TParams = TCore & { step: number; jitter: number; voices: [VoiceParams, VoiceParams] };
 
 export const DRUMS = [
   [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],
@@ -53,7 +53,7 @@ export const DRUMS = [
   [1, 2, 1, 1, 2, 0, 1, 2], [2, 0, 1, 2, 0, 1, 2, 2],
 ];
 
-export function tStream(seed: number, p: TCore): () => number {
+export function tStream(seed: number, p: TCore): () => { mask: number; jitter: number } {
   const next = dejaVuStream(seed, p);
   let drumStep = 8, drumIdx = 0, ptr = 0;
   const hist = new Array(16).fill(0), streak = [0, 0];
@@ -103,9 +103,30 @@ export function tStream(seed: number, p: TCore): () => number {
       hist[ptr] |= mask;
       ptr = (ptr + 15) % 16;
     }
-    return mask;
+    return { mask, jitter: x[5] };
   };
 }
+
+// Marbles' FastBetaDistributionSample: beta(3,3) with a fatter tail, as a 129-point inverse CDF (resources.cc dist_icdf_4_3).
+const ICDF = [
+  0.0000, 0.0898, 0.1162, 0.1355, 0.1513, 0.1649, 0.1771, 0.1881, 0.1983, 0.2078,
+  0.2168, 0.2253, 0.2334, 0.2412, 0.2487, 0.2559, 0.2628, 0.2696, 0.2761, 0.2825,
+  0.2888, 0.2949, 0.3008, 0.3067, 0.3124, 0.3180, 0.3236, 0.3290, 0.3344, 0.3396,
+  0.3448, 0.3500, 0.3551, 0.3601, 0.3651, 0.3700, 0.3748, 0.3797, 0.3844, 0.3892,
+  0.3939, 0.3985, 0.4032, 0.4078, 0.4123, 0.4169, 0.4214, 0.4259, 0.4304, 0.4348,
+  0.4392, 0.4436, 0.4480, 0.4524, 0.4568, 0.4611, 0.4655, 0.4698, 0.4741, 0.4785,
+  0.4828, 0.4871, 0.4914, 0.4957, 0.5000, 0.5043, 0.5086, 0.5129, 0.5172, 0.5215,
+  0.5259, 0.5302, 0.5345, 0.5389, 0.5432, 0.5476, 0.5520, 0.5564, 0.5608, 0.5652,
+  0.5696, 0.5741, 0.5786, 0.5831, 0.5877, 0.5922, 0.5968, 0.6015, 0.6061, 0.6108,
+  0.6156, 0.6203, 0.6252, 0.6300, 0.6349, 0.6399, 0.6449, 0.6500, 0.6552, 0.6604,
+  0.6656, 0.6710, 0.6764, 0.6820, 0.6876, 0.6933, 0.6992, 0.7051, 0.7112, 0.7175,
+  0.7239, 0.7304, 0.7372, 0.7441, 0.7513, 0.7588, 0.7666, 0.7747, 0.7832, 0.7922,
+  0.8017, 0.8119, 0.8229, 0.8351, 0.8487, 0.8645, 0.8838, 0.9102, 1.0000,
+];
+const fastBeta = (u: number) => {
+  const f = u * 128, i = Math.min(127, Math.floor(f));
+  return ICDF[i] + (ICDF[i + 1] - ICDF[i]) * (f - i);
+};
 
 // Stateful: advances one tick per step, so windows must arrive in order (run() does).
 // Channel 0/1 -> voice 0/1; each draws its pitch from its own déjà vu stream (Marbles' X outputs).
@@ -115,16 +136,22 @@ export const marbles = (p: TParams, seed = 1, root = 48): Pattern => {
   const x = [dejaVuStream(seed + 1, p), dejaVuStream(seed + 2, p)];
   const scale = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22];
   let at: number | undefined; // next tick time; p.step may change live, so accumulate instead of i * step
+  let phaseDiff = 0; // how far the jittered clock has drifted from the straight one (in ticks)
   return (from, to) => {
     at ??= from;
     const out: Ev[] = [];
-    for (; at < to; at += p.step) {
-      const mask = t();
+    while (at < to) {
+      const { mask, jitter } = t();
       for (let ch = 0; ch < 2; ch++) {
         if (mask >> ch & 1) {
           out.push({ time: at, pitch: root + 12 * ch + scale[Math.floor(x[ch]() * scale.length)], dur: p.step * 0.5, voice: ch, params: { ...p.voices[ch] } });
         }
       }
+      // Marbles' jitter: random tempo multiplier of up to +-j^4*36 semitones, nudged back toward the straight clock.
+      const semis = (fastBeta(jitter) * 2 - 1) * p.jitter ** 4 * 36;
+      const mult = 2 ** (semis / 12) * (phaseDiff > 0 ? 1 + phaseDiff : 1 / (1 - phaseDiff));
+      phaseDiff += 1 / mult - 1;
+      at += p.step / mult;
     }
     return out;
   };

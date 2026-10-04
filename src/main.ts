@@ -6,14 +6,14 @@ import workletUrl from "./braids/worklet.js?url";
 import wasmUrl from "./braids/braids.wasm?url";
 
 const p: TParams = {
-  dejaVu: 0.5, length: 8, bias: 0.5, model: "bernoulli", step: 0.25,
+  dejaVu: 0.5, length: 8, bias: 0.5, model: "bernoulli", step: 0.25, jitter: 0,
   voices: [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }],
 };
-const bind = (id: string, k: "dejaVu" | "length" | "bias" | "step") => {
+const bind = (id: string, k: "dejaVu" | "length" | "bias" | "step" | "jitter") => {
   const el = document.getElementById(id) as HTMLInputElement;
   el.oninput = () => (p[k] = +el.value);
 };
-bind("dv", "dejaVu"); bind("len", "length"); bind("bias", "bias"); bind("step", "step");
+bind("dv", "dejaVu"); bind("len", "length"); bind("bias", "bias"); bind("step", "step"); bind("jitter", "jitter");
 const model = document.getElementById("model") as HTMLSelectElement;
 model.onchange = () => (p.model = model.value as TParams["model"]);
 
