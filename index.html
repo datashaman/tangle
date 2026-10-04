@@ -1,24 +1,33 @@
 <!doctype html>
+<html lang="en">
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tangle</title>
-<button id="go">start</button>
-<select id="model">
-  <option value="bernoulli">complementary bernoulli</option>
-  <option value="independent">independent bernoulli</option>
-  <option value="threeStates">three states</option>
-  <option value="drums">drums</option>
-  <option value="markov">markov</option>
-  <option value="clusters">clusters</option>
-  <option value="divider">divider</option>
-</select>
-<select id="root"></select>
-<select id="scale"></select>
-<label>rate <input id="step" type="range" min="0.05" max="0.5" step="0.01" value="0.25"></label>
-<label>jitter <input id="jitter" type="range" min="0" max="1" step="0.01" value="0"></label>
-<label>pitch spread <input id="spread" type="range" min="0" max="1" step="0.01" value="0.75"></label>
-<label>pitch bias <input id="pbias" type="range" min="0" max="1" step="0.01" value="0.5"></label>
-<label>bias <input id="bias" type="range" min="0" max="1" step="0.01" value="0.5"></label>
-<label>déjà vu <input id="dv" type="range" min="0" max="1" step="0.01" value="0.5"></label>
-<label>length <input id="len" type="range" min="1" max="16" step="1" value="8"></label>
-<div id="voices"></div>
+<style>
+  :root { --bg: #f6f5f1; --card: #fff; --fg: #1d1d1b; --muted: #6a6a64; --line: #dcdad2; --accent: #c2410c; --on-accent: #fff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --card: #1f1f1d; --fg: #ecebe6; --muted: #9a998f; --line: #34342f; --accent: #fb923c; --on-accent: #1a1209; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+  h1 { font-size: 20px; margin: 0 8px 0 0; letter-spacing: .02em; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  label { display: block; margin-bottom: 10px; }
+  label > span { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; }
+  output { font-variant-numeric: tabular-nums; color: var(--fg); }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 4px 0 0; }
+  select, input[type=text], button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; max-width: 100%; }
+  label select { width: 100%; margin-top: 4px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; min-width: 84px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+<main>
+  <header><h1>tangle</h1><button id="go" class="primary" aria-pressed="false">start</button></header>
+  <div class="grid" id="app"></div>
+</main>
 <script type="module" src="/src/main.ts"></script>
