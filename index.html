@@ -26,6 +26,15 @@
   button { cursor: pointer; }
   button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; min-width: 84px; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .kb { position: relative; display: flex; height: 92px; margin-bottom: 10px; }
+  .kb button { padding: 0; font-size: 11px; cursor: pointer; }
+  .kb .w { position: relative; flex: 1; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; background: #faf9f5; color: #55554f; border: 1px solid #b9b7ac; border-radius: 0 0 5px 5px; }
+  .kb .b { position: absolute; top: 0; z-index: 1; width: 8.5%; height: 58%; transform: translateX(-50%); background: #26261f; color: #ddd; border: 1px solid #000; border-radius: 0 0 4px 4px; }
+  .kb .w.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .kb .b.on { background: color-mix(in srgb, var(--accent) 65%, #000); border-color: var(--accent); }
+  .kb .root::before { content: ""; position: absolute; left: 50%; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: currentColor; }
+  .kb .w.root::before { bottom: 22px; }
+  .kb .b.root::before { bottom: 6px; }
   #status { color: var(--muted); font-size: 13px; }
 </style>
 <main>

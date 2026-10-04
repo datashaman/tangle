@@ -67,29 +67,32 @@ const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const pitch = section("Pitch");
 select(pitch, "root", NOTES.map((n, i) => [String(48 + i), n]), String(DEFAULTS.root), () => String(p.root), (v) => { p.root = +v; sync.forEach((f) => f()); });
 select(pitch, "scale", [...Object.keys(SCALES), CUSTOM].map((s) => [s, s]), DEFAULTS.scale, () => p.scale, (v) => { p.scale = v; sync.forEach((f) => f()); }); // refresh the note buttons
-// Note toggles, labelled with real note names for the current root. Editing a preset scale copies it into "custom".
+// Piano keyboard in fixed C..B order; lit keys are in the scale, the dot marks the root. Clicking a key toggles that
+// note relative to the root; editing a preset scale copies it into "custom".
 {
-  const keys = html(`<div role="group" aria-label="scale notes" style="display:grid;grid-template-columns:repeat(12,1fr);gap:2px;margin-bottom:10px"></div>`);
-  const btns = NOTES.map((_, d) => {
+  const BLACK = [1, 3, 6, 8, 10], WHITE_BEFORE = { 1: 1, 3: 2, 6: 4, 8: 5, 10: 6 } as Record<number, number>; // black key sits after this many white keys
+  const kb = html(`<div class="kb" role="group" aria-label="scale notes"></div>`);
+  const degree = (pc: number) => (pc - (p.root - 48) + 12) % 12;
+  const keys = NOTES.map((n, pc) => {
     const b = document.createElement("button");
     b.type = "button";
-    b.style.padding = "4px 0";
+    b.setAttribute("aria-label", n);
+    if (BLACK.includes(pc)) { b.className = "b"; b.style.left = `${(WHITE_BEFORE[pc] / 7) * 100}%`; } else { b.className = "w"; b.textContent = n; }
     b.onclick = () => {
-      const cur = effectiveMask(p), next = cur ^ (1 << d);
+      const cur = effectiveMask(p), next = cur ^ (1 << degree(pc));
       if (next) { p.mask = next; p.scale = CUSTOM; sync.forEach((f) => f()); } // never allow an empty scale
     };
-    keys.append(b);
+    kb.append(b);
     return b;
   });
-  sync.push(() => btns.forEach((b, d) => {
-    const on = (effectiveMask(p) >> d & 1) === 1;
-    b.textContent = NOTES[(p.root - 48 + d) % 12];
+  sync.push(() => keys.forEach((b, pc) => {
+    const on = (effectiveMask(p) >> degree(pc) & 1) === 1;
+    b.classList.toggle("on", on);
+    b.classList.toggle("root", degree(pc) === 0);
     b.setAttribute("aria-pressed", String(on));
-    b.style.background = on ? "var(--accent)" : "var(--bg)";
-    b.style.color = on ? "var(--on-accent)" : "var(--fg)";
   }));
   sync[sync.length - 1]();
-  pitch.append(keys);
+  pitch.append(kb);
 }
 slider(pitch, "spread", R.spread, DEFAULTS.spread, () => p.spread, (v) => (p.spread = v));
 slider(pitch, "bias", R.pitchBias, DEFAULTS.pitchBias, () => p.pitchBias, (v) => (p.pitchBias = v));
