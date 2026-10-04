@@ -45,7 +45,7 @@ export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "ma
 // Braids shape/timbre/color (0..1), mute, and position (see space.ts). Only shape/timbre/color go to the oscillator.
 export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean; az: number; el: number; dist: number; walk: number; swing: number; swingEl: number; swingDist: number };
 export type TCore = DejaVu & { bias: number; model: TModel };
-export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; hrtf: boolean; voices: [VoiceParams, VoiceParams, VoiceParams] };
+export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; hrtf: boolean; spaceDejaVu: number; spaceLength: number; voices: [VoiceParams, VoiceParams, VoiceParams] };
 
 export const DRUMS = [
   [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],
@@ -278,15 +278,17 @@ const wrapAz = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
 // Spatial motion (per note, so it is part of the sequence): each note's position is the voice's base position plus
 //   azimuth   walk * (notes since the voice was released) + swing * (2u - 1)
 //   elevation swingEl * (2u - 1)       distance swingDist * (2u - 1)
-// with u drawn from per-voice déjà vu streams (same déjà vu/length as the rhythm), so déjà vu loops the spatial pattern too.
+// with u drawn from per-voice déjà vu streams that have their own déjà vu/length (spaceDejaVu/spaceLength), so the
+// spatial pattern can loop on a different cycle from the rhythm and pitches.
 // `held(i)` is true while the user is dragging voice i: automation yields (no `pos` on its events, walk restarts), and it
 // takes over again from wherever the voice was dropped.
 export const marbles = (p: TParams, held: (voice: number) => boolean = () => false): Pattern => {
   // Streams are rebuilt whenever p.seed changes, so reseeding works live.
   let seed = p.seed;
+  const space = { get dejaVu() { return p.spaceDejaVu; }, get length() { return p.spaceLength; } }; // read live by the streams
   const build = () => ({
     t: tStream(seed, p), x: [1, 2, 3].map((k) => dejaVuStream(seed + k, p)),
-    hop: [[4, 5, 6], [7, 8, 9], [10, 11, 12]].map((ks) => ks.map((k) => dejaVuStream(seed + k, p))), // [az, el, dist][voice]
+    hop: [[4, 5, 6], [7, 8, 9], [10, 11, 12]].map((ks) => ks.map((k) => dejaVuStream(seed + k, space))), // [az, el, dist][voice]
   });
   let { t, x, hop } = build();
   const walked = [0, 0, 0]; // notes played since each voice was last held

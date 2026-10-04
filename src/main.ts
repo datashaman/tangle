@@ -132,6 +132,8 @@ p.voices.forEach((v, i) => {
 });
 
 const space = section("Space");
+slider(space, "spatial déjà vu", R.spaceDejaVu, DEFAULTS.spaceDejaVu, () => p.spaceDejaVu, (v) => (p.spaceDejaVu = v));
+slider(space, "spatial length", R.spaceLength, DEFAULTS.spaceLength, () => p.spaceLength, (v) => (p.spaceLength = v));
 // Top-down pad: drag a voice around the listener. 10 svg units = 1 distance unit; front is up.
 {
   const dots = p.voices.map((_, i) => `<g class="vp" data-i="${i}" tabindex="-1"><circle r="9"/><text y="4" text-anchor="middle">${i + 1}</text></g>`).join("");

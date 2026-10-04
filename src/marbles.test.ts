@@ -23,7 +23,7 @@ test("dejaVu 1 only reorders: values come from the existing loop", () => {
 
 import { tStream as tStreamFull, DRUMS, type TModel, type TCore } from "./marbles.ts";
 const tStream = (seed: number, p: TCore) => { const n = tStreamFull(seed, p); return () => n().mask; };
-const T = (model: TModel, bias: number, dejaVu = 0, length = 8) => ({ model, bias, dejaVu, length, seed: 1, hrtf: true });
+const T = (model: TModel, bias: number, dejaVu = 0, length = 8) => ({ model, bias, dejaVu, length, seed: 1, hrtf: true, spaceDejaVu: 0.5, spaceLength: 8 });
 
 test("t: complementary bernoulli fires exactly one channel; bias extremes pin it", () => {
   for (const m of take(64, tStream(3, T("bernoulli", 0.5)))) assert.ok(m === 1 || m === 2);
@@ -154,7 +154,7 @@ test("custom scale: mask drives the notes; presets are equivalent masks; empty m
   assert.deepEqual([...new Set(ev.map((e) => e.pitch - e.voice! * 12))].sort((a, b) => a - b), [50, 61, 62, 73]);
 });
 
-const motionParams = (over: any, dejaVu = 0.5, length = 4) => ({ ...T("independent", 0, dejaVu, length), step: 0.25, jitter: 0, scale: "chromatic", mask: 1, root: 48, spread: 0.75, pitchBias: 0.5,
+const motionParams = (over: any, dejaVu = 0.5, length = 4, space = { spaceDejaVu: dejaVu, spaceLength: length }) => ({ ...T("independent", 0, dejaVu, length), ...space, step: 0.25, jitter: 0, scale: "chromatic", mask: 1, root: 48, spread: 0.75, pitchBias: 0.5,
   voices: [{ shape: 0, timbre: 0.5, color: 0.5, on: true, az: 10, el: 0, dist: 2, walk: 0, swing: 0, swingEl: 0, swingDist: 0, ...over }, { shape: 3, timbre: 0.5, color: 0.5, on: false, az: 0, el: 0, dist: 2, walk: 0, swing: 0, swingEl: 0, swingDist: 0 }, { shape: 5, timbre: 0.5, color: 0.5, on: false, az: 0, el: 0, dist: 2, walk: 0, swing: 0, swingEl: 0, swingDist: 0 }] as [any, any, any] });
 const v0 = (ev: any[]) => ev.filter((e) => e.voice === 0);
 
@@ -192,4 +192,13 @@ test("motion: elevation and distance swing stay in range and clamp at the limits
   assert.ok(new Set(a.map((q: any) => q.el)).size > 1 && new Set(a.map((q: any) => q.dist)).size > 1);
   const b = pos({ el: 80, dist: 1, swingEl: 30, swingDist: 5 });
   assert.ok(b.every((q: any) => q.el <= 90 && q.el >= 50 && q.dist >= 1 && q.dist <= 6));
+});
+
+test("motion: spatial deja vu loops independently of the rhythm and pitch loop", () => {
+  // rhythm/pitch fully random (deja vu 0), spatial pattern locked to a 4-note loop
+  const ev = v0(marbles(motionParams({ swing: 40, swingEl: 20 }, 0, 8, { spaceDejaVu: 0.5, spaceLength: 4 }))(0, 20));
+  const az = ev.map((e) => e.pos?.az), el = ev.map((e) => e.pos?.el), pitch = ev.map((e) => e.pitch);
+  assert.deepEqual(az.slice(0, 4), az.slice(4, 8));
+  assert.deepEqual(el.slice(0, 4), el.slice(4, 8));
+  assert.notDeepEqual(pitch.slice(0, 4), pitch.slice(4, 8));
 });
