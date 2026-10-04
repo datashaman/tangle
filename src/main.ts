@@ -53,9 +53,12 @@ const checkbox = (parent: HTMLElement, label: string, get: () => boolean, set: (
 
 // Spatial placement: one PannerNode per voice, created when audio starts; controls call updatePanners() to move them live.
 let panners: PannerNode[] = [];
+// Where each voice actually is right now (after sequenced motion); null when it isn't moving.
+const live: ({ az: number; dist: number } | null)[] = [null, null, null];
+let timers: number[] = [];
 let held = -1; // voice currently being dragged on the pad, or -1
 let drawPad = () => {}; // assigned once the pad exists
-const updatePanners = () => { drawPad(); panners.forEach((pn, i) => {
+const updatePanners = () => { live.fill(null); drawPad(); panners.forEach((pn, i) => {
   const [x, y, z] = position(p.voices[i].az, p.voices[i].el, p.voices[i].dist);
   pn.positionX.value = x; pn.positionY.value = y; pn.positionZ.value = z;
   pn.panningModel = p.hrtf ? "HRTF" : "equalpower";
@@ -140,12 +143,16 @@ slider(space, "spatial length", R.spaceLength, DEFAULTS.spaceLength, () => p.spa
   const svg = html(`<svg class="pad" viewBox="-110 -110 220 220" aria-hidden="true">
     <circle class="ring" r="10"/><circle class="ring" r="50"/><circle class="ring" r="100"/>
     <path class="ring" d="M0 -105V105M-105 0H105"/>
-    <circle class="head" r="5"/><path class="head" d="M0 -10L-3.5 -4H3.5Z"/>${dots}</svg>`) as unknown as SVGSVGElement;
+    <circle class="head" r="5"/><path class="head" d="M0 -10L-3.5 -4H3.5Z"/>${dots}${p.voices.map(() => `<circle class="live" r="4"/>`).join("")}</svg>`) as unknown as SVGSVGElement;
   const groups = Array.from(svg.querySelectorAll<SVGGElement>(".vp"));
+  const liveDots = Array.from(svg.querySelectorAll<SVGCircleElement>(".live"));
   drawPad = () => groups.forEach((g, i) => {
     const v = p.voices[i], [x, y] = plan(v.az, v.dist);
     g.setAttribute("transform", `translate(${10 * x} ${-10 * y})`);
     g.style.opacity = v.on ? "1" : "0.35";
+    const l = live[i], d = liveDots[i];
+    d.style.display = l ? "" : "none";
+    if (l) { const [lx, ly] = plan(l.az, l.dist); d.setAttribute("cx", String(10 * lx)); d.setAttribute("cy", String(-10 * ly)); }
   });
   groups.forEach((g, i) => {
     // While held, the sequencer's motion yields; on release it takes over again from the dropped position.
@@ -247,12 +254,14 @@ go.onclick = async () => {
   const stopRun = run(marbles(p, (i) => held === i), () => ctx.currentTime, (e) => {
     const i = e.voice ?? 0;
     nodes[i].port.postMessage(e);
-    if (e.pos) { // sequenced motion: move the voice at the note's start time
+    if (e.pos) { // sequenced motion: move the voice at the note's start time, and show it on the pad when it happens
       const { az, el, dist } = e.pos, [x, y, z] = position(az, el, dist);
       panners[i].positionX.setValueAtTime(x, e.time); panners[i].positionY.setValueAtTime(y, e.time); panners[i].positionZ.setValueAtTime(z, e.time);
+      timers.push(window.setTimeout(() => { live[i] = { az, dist }; drawPad(); }, Math.max(0, (e.time - ctx.currentTime) * 1000)));
+      if (timers.length > 64) timers = timers.slice(-32); // old ones have fired long ago
     }
   });
-  stop = () => { stopRun(); nodes.forEach((n) => n.disconnect()); panners = []; ctx.close(); };
+  stop = () => { stopRun(); timers.forEach(clearTimeout); timers = []; nodes.forEach((n) => n.disconnect()); panners = []; live.fill(null); drawPad(); ctx.close(); };
   go.textContent = "stop";
   go.setAttribute("aria-pressed", "true");
 };
