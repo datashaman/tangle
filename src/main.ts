@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { run, type Ev, type Pattern } from "./sequencer.ts";
+import { randomize } from "./randomize.ts";
 import { capture, sanitizeTake, takePattern, type Take } from "./takes.ts";
 import { CUSTOM, effectiveMask, marbles, SCALES, type TParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
@@ -349,6 +350,29 @@ saved.onchange = () => {
 const fromHash = location.hash.match(/^#p=(.+)$/)?.[1];
 const shared = fromHash && decode(fromHash);
 if (shared) { apply(shared); say("loaded shared preset"); }
+
+// --- randomize: one click re-rolls the config; undo steps back through the previous settings ---
+const history: TParams[] = [];
+const undoBtn = document.getElementById("undo") as HTMLButtonElement;
+const roll = (scope: "music" | "all") => {
+  history.push(structuredClone(p));
+  if (history.length > 30) history.shift();
+  apply(randomize(p, scope));
+  undoBtn.disabled = false;
+  say(scope === "all" ? "randomized everything (not the mixer)" : "randomized rhythm, pitch and space");
+};
+const undo = () => {
+  const prev = history.pop();
+  if (prev) { apply(prev); say("undone"); }
+  undoBtn.disabled = history.length === 0;
+};
+(document.getElementById("rnd") as HTMLButtonElement).onclick = () => roll("music");
+(document.getElementById("rndall") as HTMLButtonElement).onclick = () => roll("all");
+undoBtn.onclick = undo;
+addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || (e.target as HTMLElement).closest("input, select, textarea")) return;
+  if (e.key === "r") roll("music"); else if (e.key === "R") roll("all"); else if (e.key === "u") undo();
+});
 
 // --- recording: tap the master gain into a MediaRecorder; stopping downloads the file ---
 let rec: MediaRecorder | null = null;
