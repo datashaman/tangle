@@ -69,3 +69,24 @@ test("jitter 0 is an exact grid; jitter 1 wanders but stays near the straight cl
   assert.ok(t.every((x, i) => i === 0 || x > t[i - 1]), "not monotone");
   assert.ok(Math.abs(t.at(-1)! - 100) < 5, `drifted: last tick ${t.at(-1)}`);
 });
+
+import { pulsesAt } from "./marbles.ts";
+const near = (a: number[], b: number[]) => assert.ok(a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-9), `${a} vs ${b}`);
+
+test("pulsesAt: ratios place pulses at k*q/p ticks", () => {
+  near(pulsesAt(0, 1, 1), [0]);
+  near(pulsesAt(0, 4, 1), [0, 0.25, 0.5, 0.75]);
+  near(pulsesAt(0, 1, 2), [0]); near(pulsesAt(1, 1, 2), []); // 1/2: every other tick
+  near(pulsesAt(0, 3, 2), [0, 2 / 3]); near(pulsesAt(1, 3, 2), [1 / 3]); // 3/2 over 2 ticks = 3 pulses
+});
+
+test("t: divider bias 0 is 8:(1/8) over 8 ticks; centre is 1:1; clusters at centre is 1:1", () => {
+  const ticks = (model: TModel, bias: number, n: number) => { const t = tStreamFull(9, T(model, bias)); return Array.from({ length: n }, () => t().pulses); };
+  const d = ticks("divider", 0, 8);
+  assert.equal(d.flat().filter((x) => x.ch === 0).length, 64);
+  assert.equal(d.flat().filter((x) => x.ch === 1).length, 1);
+  assert.ok(ticks("divider", 0.5, 6).every((t) => t.length === 2 && t.every((x) => x.phase === 0)));
+  assert.ok(ticks("clusters", 0.5, 6).every((t) => t.length === 2 && t.every((x) => x.phase === 0)));
+  const c = ticks("clusters", 1, 200).flat();
+  assert.ok(c.every((x) => x.phase >= 0 && x.phase < 1 && x.period > 0) && c.some((x) => x.phase > 0));
+});

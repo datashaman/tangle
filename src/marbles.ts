@@ -38,9 +38,10 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
 }
 
 // Port of Marbles' "t" generator (marbles/random/t_generator.cc): on each clock tick, draw a random vector
-// from a déjà vu stream and let a model decide which of the 2 channels fire. Returns a bitmask per tick.
-// Omitted: clusters and divider models (need the ramp/divider machinery), pulse-width randomness.
-export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov";
+// from a déjà vu stream and let a model decide which of the 2 channels fire. Per tick it returns pulses placed at a
+// phase (0..1) within the tick; clusters/divider make real polyrhythms, the other models only fire on the tick (phase 0).
+// Omitted: pulse-width randomness, external clock, reset.
+export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov" | "clusters" | "divider";
 export type VoiceParams = { shape: number; timbre: number; color: number }; // Braids, timbre/color 0..1
 export type TCore = DejaVu & { bias: number; model: TModel };
 export type TParams = TCore & { step: number; jitter: number; voices: [VoiceParams, VoiceParams] };
@@ -53,9 +54,32 @@ export const DRUMS = [
   [1, 2, 1, 1, 2, 0, 1, 2], [2, 0, 1, 2, 0, 1, 2, 2],
 ];
 
-export function tStream(seed: number, p: TCore): () => { mask: number; jitter: number } {
+// [p0, q0, p1, q1, length]: channel rate multipliers (p/q x master) over `length` master ticks.
+type Pat = [number, number, number, number, number];
+const CLUSTERS: Pat[] = [
+  [1, 1, 1, 1, 1], [1, 1, 2, 1, 1], [1, 2, 1, 1, 2], [1, 1, 4, 1, 1], [1, 2, 2, 1, 2], [1, 1, 3, 2, 2],
+  [1, 4, 4, 1, 4], [1, 4, 2, 1, 4], [1, 2, 3, 2, 2], [1, 1, 8, 1, 1], [1, 1, 3, 1, 1], [1, 3, 1, 1, 3],
+  [1, 1, 5, 4, 4], [1, 2, 5, 4, 4], [1, 1, 6, 1, 1], [1, 3, 2, 1, 3], [1, 1, 16, 1, 1],
+];
+const DIVIDERS: Pat[] = [
+  [8, 1, 1, 8, 8], [6, 1, 1, 6, 6], [4, 1, 1, 4, 4], [3, 1, 1, 3, 3], [2, 1, 1, 2, 2], [3, 2, 2, 3, 6],
+  [4, 3, 3, 4, 12], [5, 4, 4, 5, 20], [1, 1, 1, 1, 1], [4, 5, 5, 4, 20], [3, 4, 4, 3, 12], [2, 2, 3, 2, 6],
+  [1, 2, 2, 1, 2], [1, 3, 3, 1, 3], [1, 4, 4, 1, 4], [1, 6, 6, 1, 6], [1, 8, 8, 1, 8],
+];
+
+// Phases (0..1) of a p/q-rate channel's pulses inside master tick `m` of its pattern: pulses sit at k*q/p ticks.
+export function pulsesAt(m: number, p: number, q: number): number[] {
+  const out: number[] = [];
+  for (let k = Math.floor((m * p + q - 1) / q); k * q < (m + 1) * p; k++) out.push((k * q - m * p) / p);
+  return out;
+}
+
+export type Pulse = { ch: number; phase: number; period: number }; // period in master ticks
+
+export function tStream(seed: number, p: TCore): () => { mask: number; jitter: number; pulses: Pulse[] } {
   const next = dejaVuStream(seed, p);
   let drumStep = 8, drumIdx = 0, ptr = 0;
+  let patLen = 0, m = 0, pat = CLUSTERS[0]; // clusters/divider: ticks left in pattern, tick index, current pattern
   const hist = new Array(16).fill(0), streak = [0, 0];
   return () => {
     // Marbles' NextVector: one stream value seeds an LCG that expands into the 6-float vector.
@@ -67,6 +91,7 @@ export function tStream(seed: number, p: TCore): () => { mask: number; jitter: n
     });
     const u = [x[2], x[3]], pr = x[4], b = p.bias;
     let mask = 0;
+    let pulses: Pulse[] | undefined;
     if (p.model === "bernoulli") {
       for (let i = 0; i < 2; i++) if (((u[0] > b ? 1 : 0) ^ (i & 1)) === 1) mask |= 1 << i;
     } else if (p.model === "independent") {
@@ -82,6 +107,26 @@ export function tStream(seed: number, p: TCore): () => { mask: number; jitter: n
         if (b <= 0.5) drumIdx -= drumIdx % 2;
       }
       mask = DRUMS[drumIdx][drumStep];
+    } else if (p.model === "clusters" || p.model === "divider") {
+      if (--patLen <= 0) {
+        if (p.model === "divider") {
+          pat = DIVIDERS[Math.min(16, Math.floor(b * 17))]; // ponytail: Marbles adds hysteresis here; sliders don't need it
+        } else {
+          const strength = Math.abs(b - 0.5) * 2;
+          let v = u[0];
+          v *= v + strength * strength * (1 - v);
+          v *= strength;
+          pat = CLUSTERS[Math.min(16, Math.floor(v * 17))];
+          if (b < 0.5) pat = [pat[2], pat[3], pat[0], pat[1], pat[4]];
+        }
+        patLen = pat[4];
+        m = 0;
+      } else m++;
+      pulses = [];
+      for (let ch = 0; ch < 2; ch++) {
+        const [pp, q] = [pat[2 * ch], pat[2 * ch + 1]];
+        for (const phase of pulsesAt(m, pp, q)) { pulses.push({ ch, phase, period: q / pp }); mask |= 1 << ch; }
+      }
     } else {
       const bb = 1.5 * b - 0.5, len = Math.min(16, Math.max(1, Math.round(p.length)));
       hist[ptr] = 0;
@@ -103,7 +148,8 @@ export function tStream(seed: number, p: TCore): () => { mask: number; jitter: n
       hist[ptr] |= mask;
       ptr = (ptr + 15) % 16;
     }
-    return { mask, jitter: x[5] };
+    pulses ??= [0, 1].filter((ch) => mask >> ch & 1).map((ch) => ({ ch, phase: 0, period: 1 }));
+    return { mask, jitter: x[5], pulses };
   };
 }
 
@@ -141,18 +187,17 @@ export const marbles = (p: TParams, seed = 1, root = 48): Pattern => {
     at ??= from;
     const out: Ev[] = [];
     while (at < to) {
-      const { mask, jitter } = t();
-      for (let ch = 0; ch < 2; ch++) {
-        if (mask >> ch & 1) {
-          out.push({ time: at, pitch: root + 12 * ch + scale[Math.floor(x[ch]() * scale.length)], dur: p.step * 0.5, voice: ch, params: { ...p.voices[ch] } });
-        }
-      }
+      const { pulses, jitter } = t();
       // Marbles' jitter: random tempo multiplier of up to +-j^4*36 semitones, nudged back toward the straight clock.
       const semis = (fastBeta(jitter) * 2 - 1) * p.jitter ** 4 * 36;
       const mult = 2 ** (semis / 12) * (phaseDiff > 0 ? 1 + phaseDiff : 1 / (1 - phaseDiff));
       phaseDiff += 1 / mult - 1;
-      at += p.step / mult;
+      const dt = p.step / mult; // length of this tick; pulses are placed by phase inside it
+      for (const { ch, phase, period } of pulses) {
+        out.push({ time: at + phase * dt, pitch: root + 12 * ch + scale[Math.floor(x[ch]() * scale.length)], dur: Math.min(1, period) * dt * 0.5, voice: ch, params: { ...p.voices[ch] } });
+      }
+      at += dt;
     }
-    return out;
+    return out.sort((a, b) => a.time - b.time);
   };
 };
