@@ -45,3 +45,16 @@ test("t: dejaVu 0.5 loops the rhythm; markov is reproducible", () => {
   assert.deepEqual(a, take(64, tStream(5, T("markov", 0.5))));
   assert.ok(a.every((m) => m >= 0 && m <= 3) && a.some((m) => m > 0));
 });
+
+import { marbles } from "./marbles.ts";
+test("marbles: live step change keeps events ordered and windows contiguous", () => {
+  const p = { ...T("independent", 0.5), step: 0.25, voices: [{ shape: 0, timbre: 0.5, color: 0.5 }, { shape: 3, timbre: 0.5, color: 0.5 }] as [any, any] };
+  const pat = marbles(p, 1);
+  const ev = [...pat(0, 1)];
+  p.step = 0.1;
+  ev.push(...pat(1, 2));
+  const t = ev.map((e) => e.time);
+  assert.deepEqual(t, [...t].sort((a, b) => a - b));
+  assert.ok(t.some((x) => x > 1.0 && x < 2) && t.every((x) => x < 2));
+  assert.ok(ev.every((e) => e.params!.shape === (e.voice ? 3 : 0)));
+});

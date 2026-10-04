@@ -41,7 +41,9 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
 // from a déjà vu stream and let a model decide which of the 2 channels fire. Returns a bitmask per tick.
 // Omitted: clusters and divider models (need the ramp/divider machinery), clock jitter, pulse-width randomness.
 export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov";
-export type TParams = DejaVu & { bias: number; model: TModel };
+export type VoiceParams = { shape: number; timbre: number; color: number }; // Braids, timbre/color 0..1
+export type TCore = DejaVu & { bias: number; model: TModel };
+export type TParams = TCore & { step: number; voices: [VoiceParams, VoiceParams] };
 
 export const DRUMS = [
   [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],
@@ -51,7 +53,7 @@ export const DRUMS = [
   [1, 2, 1, 1, 2, 0, 1, 2], [2, 0, 1, 2, 0, 1, 2, 2],
 ];
 
-export function tStream(seed: number, p: TParams): () => number {
+export function tStream(seed: number, p: TCore): () => number {
   const next = dejaVuStream(seed, p);
   let drumStep = 8, drumIdx = 0, ptr = 0;
   const hist = new Array(16).fill(0), streak = [0, 0];
@@ -107,20 +109,20 @@ export function tStream(seed: number, p: TParams): () => number {
 
 // Stateful: advances one tick per step, so windows must arrive in order (run() does).
 // Channel 0/1 -> voice 0/1; each draws its pitch from its own déjà vu stream (Marbles' X outputs).
-// ponytail: fixed clock, minor-pentatonic quantizer.
-export const marbles = (p: TParams, seed = 1, step = 0.25, root = 48): Pattern => {
+// ponytail: minor-pentatonic quantizer; a rate change takes effect from the next tick.
+export const marbles = (p: TParams, seed = 1, root = 48): Pattern => {
   const t = tStream(seed, p);
   const x = [dejaVuStream(seed + 1, p), dejaVuStream(seed + 2, p)];
   const scale = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22];
-  let i: number | undefined;
+  let at: number | undefined; // next tick time; p.step may change live, so accumulate instead of i * step
   return (from, to) => {
-    i ??= Math.ceil(from / step);
+    at ??= from;
     const out: Ev[] = [];
-    for (; i * step < to; i++) {
+    for (; at < to; at += p.step) {
       const mask = t();
       for (let ch = 0; ch < 2; ch++) {
         if (mask >> ch & 1) {
-          out.push({ time: i * step, pitch: root + 12 * ch + scale[Math.floor(x[ch]() * scale.length)], dur: step * 0.5, voice: ch, params: { shape: ch ? 3 : 0 } });
+          out.push({ time: at, pitch: root + 12 * ch + scale[Math.floor(x[ch]() * scale.length)], dur: p.step * 0.5, voice: ch, params: { ...p.voices[ch] } });
         }
       }
     }
