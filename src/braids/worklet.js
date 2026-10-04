@@ -9,6 +9,8 @@ class BraidsProcessor extends AudioWorkletProcessor {
     this.q = []; // note-ons, sorted by time
     this.offAt = Infinity;
     this.level = 0;
+    this.atk = 0.002;
+    this.rel = 0.04;
     this.gate = false;
     this.buf = new Int16Array(24);
     this.i = 24; // force render on first sample
@@ -23,7 +25,9 @@ class BraidsProcessor extends AudioWorkletProcessor {
       const t = (currentFrame + n) / sampleRate;
       while (this.q.length && this.q[0].time <= t) {
         const { pitch, dur, time, params = {} } = this.q.shift();
-        const { shape = 0, timbre = 0.5, color = 0.5 } = params;
+        const { shape = 0, timbre = 0.5, color = 0.5, attack = 0, release = 0 } = params;
+        this.atk = 0.002 * 2000 ** attack; // 2 ms .. 4 s
+        this.rel = 0.04 * 100 ** release; // 40 ms .. 4 s
         this.x.b_set(shape, Math.round(pitch * 128), Math.round(timbre * 32767), Math.round(color * 32767));
         this.x.b_strike();
         this.gate = true;
@@ -34,8 +38,7 @@ class BraidsProcessor extends AudioWorkletProcessor {
         this.buf = new Int16Array(this.x.memory.buffer, this.x.b_render(), 24);
         this.i = 0;
       }
-      // ponytail: linear AR with fixed times (2ms / 40ms); make configurable when a patch needs it
-      this.level = this.gate ? Math.min(1, this.level + 1 / (0.002 * sampleRate)) : Math.max(0, this.level - 1 / (0.04 * sampleRate));
+      this.level = this.gate ? Math.min(1, this.level + 1 / (this.atk * sampleRate)) : Math.max(0, this.level - 1 / (this.rel * sampleRate));
       out[n] = (this.buf[this.i++] / 32768) * this.level * 0.5;
     }
     return true;

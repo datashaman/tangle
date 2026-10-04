@@ -4,7 +4,8 @@ import { DEFAULTS, decode, encode, sanitize } from "./presets.ts";
 
 test("preset survives a share-link round trip", () => {
   const p = { ...structuredClone(DEFAULTS), model: "drums" as const, scale: "blues", jitter: 0.4, root: 53, length: 5 };
-  p.voices[1] = { shape: 33, timbre: 0.1, color: 0.9, on: false, az: 120, el: -20, dist: 4, walk: -30, swing: 60, swingEl: 15, swingDist: 2.5, level: 0.4, delaySend: 0.3, reverbSend: 0.6 };
+  p.voices[1] = { shape: 33, timbre: 0.1, color: 0.9, on: false, az: 120, el: -20, dist: 4, walk: -30, swing: 60, swingEl: 15, swingDist: 2.5, level: 0.4, delaySend: 0.3, reverbSend: 0.6, attack: 0.7, release: 0.9 };
+  p.gate = 1.4; p.step = 2.5;
   p.volume = 0.6;
   p.spaceDejaVu = 0.2; p.spaceLength = 5;
   p.hrtf = false;
@@ -99,4 +100,13 @@ test("grain params are clamped and fall back to defaults", () => {
 test("sampler params are clamped and fall back to defaults", () => {
   const s = sanitize({ sampler: { on: 1, source: -4, length: 9, scatter: "x" } });
   assert.deepEqual(s.sampler, { ...DEFAULTS.sampler, source: 0, length: 1 });
+});
+
+import { FACTORY } from "./presets.ts";
+test("factory presets are slow and survive sanitizing unchanged", () => {
+  for (const raw of Object.values(FACTORY)) {
+    const s = sanitize(raw);
+    assert.deepEqual(sanitize(s), s);
+    assert.ok(s.step >= 1 && s.gate > 1, "ambient: slow ticks, overlapping notes");
+  }
 });

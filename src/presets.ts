@@ -7,7 +7,7 @@ export const MODELS: TModel[] = ["bernoulli", "independent", "threeStates", "dru
 
 // [min, max, step]: the slider specs and the clamp limits in one place.
 export const R = {
-  dejaVu: [0, 1, 0.01], length: [1, 16, 1], bias: [0, 1, 0.01], step: [0.05, 0.5, 0.01], jitter: [0, 1, 0.01],
+  dejaVu: [0, 1, 0.01], length: [1, 16, 1], bias: [0, 1, 0.01], step: [0.05, 3, 0.01], gate: [0.05, 2, 0.01], attack: [0, 1, 0.01], release: [0, 1, 0.01], jitter: [0, 1, 0.01],
   spread: [0, 1, 0.01], pitchBias: [0, 1, 0.01], root: [48, 59, 1], seed: [1, 999999, 1], mask: [1, 4095, 1],
   shape: [0, SHAPES.length - 1, 1], timbre: [0, 1, 0.01], color: [0, 1, 0.01],
   az: [-180, 180, 1], el: [-90, 90, 1], dist: [1, 10, 0.1], walk: [-90, 90, 1], swing: [0, 180, 1], swingEl: [0, 90, 1], swingDist: [0, 9, 0.1],
@@ -20,15 +20,15 @@ export const R = {
 } as const;
 
 export const DEFAULTS: TParams = {
-  dejaVu: 0.5, length: 8, bias: 0.5, model: "bernoulli", step: 0.25, jitter: 0,
+  dejaVu: 0.5, length: 8, bias: 0.5, model: "bernoulli", step: 0.25, gate: 0.5, jitter: 0,
   scale: "minor pentatonic", root: 48, spread: 0.75, pitchBias: 0.5, seed: 1, mask: maskOf(SCALES["minor pentatonic"]), hrtf: true, volume: 0.8, delayMix: 0, delayTicks: 3, delayFeedback: 0.4, reverbMix: 0, reverbSize: 2, drive: 0, chorusMix: 0, filter: 1, filterRes: 0, // effects start off (filter fully open)
   sampler: { on: false, source: 0, length: 0.5, scatter: 0.3, follow: 0.5, level: 0.8, delaySend: 0, reverbSend: 0 },
   grain: { on: false, source: 0, size: 0.5, scatter: 0.3, follow: 0.5, spread: 0.5, level: 0.8, delaySend: 0, reverbSend: 0 },
   spaceDejaVu: 0.5, spaceLength: 8, // pitch spread 0.75 / bias 0.5 = uniform pitches
   voices: [
-    { shape: 0, timbre: 0.5, color: 0.5, on: true, az: -45, el: 0, dist: 1.5, walk: 0, swing: 0, swingEl: 0, swingDist: 0, level: 1, delaySend: 1, reverbSend: 1 },
-    { shape: 3, timbre: 0.5, color: 0.5, on: true, az: 45, el: 0, dist: 1.5, walk: 0, swing: 0, swingEl: 0, swingDist: 0, level: 1, delaySend: 1, reverbSend: 1 },
-    { shape: 5, timbre: 0.5, color: 0.5, on: false, az: 0, el: 0, dist: 1.5, walk: 0, swing: 0, swingEl: 0, swingDist: 0, level: 1, delaySend: 1, reverbSend: 1 }, // master clock voice, off until asked for
+    { shape: 0, timbre: 0.5, color: 0.5, on: true, az: -45, el: 0, dist: 1.5, walk: 0, swing: 0, swingEl: 0, swingDist: 0, level: 1, delaySend: 1, reverbSend: 1, attack: 0, release: 0 },
+    { shape: 3, timbre: 0.5, color: 0.5, on: true, az: 45, el: 0, dist: 1.5, walk: 0, swing: 0, swingEl: 0, swingDist: 0, level: 1, delaySend: 1, reverbSend: 1, attack: 0, release: 0 },
+    { shape: 5, timbre: 0.5, color: 0.5, on: false, az: 0, el: 0, dist: 1.5, walk: 0, swing: 0, swingEl: 0, swingDist: 0, level: 1, delaySend: 1, reverbSend: 1, attack: 0, release: 0 }, // master clock voice, off until asked for
   ],
 };
 
@@ -44,6 +44,7 @@ export function sanitize(raw: unknown, base: TParams = DEFAULTS): TParams {
     walk: num(v?.walk, R.walk, b.walk), swing: num(v?.swing, R.swing, b.swing),
     swingEl: num(v?.swingEl, R.swingEl, b.swingEl), swingDist: num(v?.swingDist, R.swingDist, b.swingDist), level: num(v?.level, R.level, b.level),
     delaySend: num(v?.delaySend, R.send, b.delaySend), reverbSend: num(v?.reverbSend, R.send, b.reverbSend),
+    attack: num(v?.attack, R.attack, b.attack), release: num(v?.release, R.release, b.release),
   });
   const grain = (g: any, b: GrainParams): GrainParams => ({
     on: typeof g?.on === "boolean" ? g.on : b.on, source: Math.round(num(g?.source, R.source, b.source)), size: num(g?.size, R.size, b.size),
@@ -58,7 +59,7 @@ export function sanitize(raw: unknown, base: TParams = DEFAULTS): TParams {
   return {
     dejaVu: num(r.dejaVu, R.dejaVu, base.dejaVu), length: Math.round(num(r.length, R.length, base.length)),
     bias: num(r.bias, R.bias, base.bias), model: MODELS.includes(r.model) ? r.model : base.model,
-    step: num(r.step, R.step, base.step), jitter: num(r.jitter, R.jitter, base.jitter),
+    step: num(r.step, R.step, base.step), gate: num(r.gate, R.gate, base.gate), jitter: num(r.jitter, R.jitter, base.jitter),
     scale: typeof r.scale === "string" && (r.scale === CUSTOM || Object.hasOwn(SCALES, r.scale)) ? r.scale : base.scale,
     root: Math.round(num(r.root, R.root, base.root)), spread: num(r.spread, R.spread, base.spread),
     pitchBias: num(r.pitchBias, R.pitchBias, base.pitchBias), seed: Math.round(num(r.seed, R.seed, base.seed)), mask: Math.round(num(r.mask, R.mask, base.mask)),
@@ -79,3 +80,18 @@ export const encode = (p: TParams) => btoa(JSON.stringify(p)).replace(/\+/g, "-"
 export function decode(s: string): TParams | null {
   try { return sanitize(JSON.parse(atob(s.replace(/-/g, "+").replace(/_/g, "/")))); } catch { return null; }
 }
+
+// Built-in presets, listed ahead of the user's own. Slow ticks, long overlapping notes with slow envelopes, lots of space.
+export const FACTORY: Record<string, unknown> = {
+  "ambient drift": {
+    step: 2.2, gate: 1.5, jitter: 0.25, model: "bernoulli", bias: 0.4, dejaVu: 0.7, length: 8,
+    scale: "minor pentatonic", root: 50, spread: 0.55, pitchBias: 0.5,
+    delayMix: 0.35, delayTicks: 2, delayFeedback: 0.55, reverbMix: 0.55, reverbSize: 3, drive: 0, chorusMix: 0.45, filter: 0.78, filterRes: 0.1,
+    spaceDejaVu: 0.8, spaceLength: 6,
+    voices: [
+      { shape: 3, timbre: 0.4, color: 0.5, on: true, az: -60, el: 10, dist: 2.5, walk: 6, swing: 30, level: 0.9, attack: 0.65, release: 0.8 },
+      { shape: 12, timbre: 0.5, color: 0.45, on: true, az: 60, el: 20, dist: 3, walk: -5, swing: 40, level: 0.7, attack: 0.7, release: 0.85 },
+      { shape: 3, timbre: 0.3, color: 0.5, on: true, az: 0, el: 0, dist: 4, level: 0.55, attack: 0.8, release: 0.9 },
+    ],
+  },
+};

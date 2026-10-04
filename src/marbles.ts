@@ -43,7 +43,7 @@ export function dejaVuStream(seed: number, p: DejaVu): () => number {
 // Omitted: pulse-width randomness, external clock, reset.
 export type TModel = "bernoulli" | "independent" | "threeStates" | "drums" | "markov" | "clusters" | "divider";
 // Braids shape/timbre/color (0..1), mute, and position (see space.ts). Only shape/timbre/color go to the oscillator.
-export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean; az: number; el: number; dist: number; walk: number; swing: number; swingEl: number; swingDist: number; level: number; delaySend: number; reverbSend: number };
+export type VoiceParams = { shape: number; timbre: number; color: number; on: boolean; az: number; el: number; dist: number; walk: number; swing: number; swingEl: number; swingDist: number; level: number; delaySend: number; reverbSend: number; attack: number; release: number };
 // Granular voice ("voice 4"): grains cut from the last few seconds of what the voices played, one grain per pulse of
 // the `source` voice. Grain position and pan come from that voice's déjà vu spatial streams, pitch follows its melody.
 export type GrainParams = { on: boolean; source: number; size: number; scatter: number; follow: number; spread: number; level: number; delaySend: number; reverbSend: number };
@@ -55,7 +55,7 @@ export type SamplerParams = { on: boolean; source: number; length: number; scatt
 export const SAMPLER = 4; // Ev.voice index of the sampler
 export const sliceSecs = (length: number) => 0.05 * 100 ** length; // 0..1 -> 50 ms .. 5 s (of the sample, before pitch)
 export type TCore = DejaVu & { bias: number; model: TModel };
-export type TParams = TCore & { step: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; hrtf: boolean; volume: number; delayMix: number; delayTicks: number; delayFeedback: number; reverbMix: number; reverbSize: number; drive: number; chorusMix: number; filter: number; filterRes: number; spaceDejaVu: number; spaceLength: number; grain: GrainParams; sampler: SamplerParams; voices: [VoiceParams, VoiceParams, VoiceParams] };
+export type TParams = TCore & { step: number; gate: number; jitter: number; scale: string; root: number; spread: number; pitchBias: number; seed: number; mask: number; hrtf: boolean; volume: number; delayMix: number; delayTicks: number; delayFeedback: number; reverbMix: number; reverbSize: number; drive: number; chorusMix: number; filter: number; filterRes: number; spaceDejaVu: number; spaceLength: number; grain: GrainParams; sampler: SamplerParams; voices: [VoiceParams, VoiceParams, VoiceParams] };
 
 export const DRUMS = [
   [1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 0], [1, 0, 1, 0, 2, 0, 0, 0], [0, 0, 1, 0, 2, 0, 0, 2],
@@ -339,7 +339,7 @@ export const marbles = (p: TParams, held: (voice: number) => boolean = () => fal
           el: Math.min(90, Math.max(-90, el + swingEl * (2 * ue - 1))),
           dist: Math.min(10, Math.max(1, dist + swingDist * (2 * ud - 1))),
         } : undefined;
-        out.push({ time: at + phase * dt, pitch, dur: Math.min(1, period) * dt * 0.5, voice: ch, pos, params });
+        out.push({ time: at + phase * dt, pitch, dur: Math.min(1, period) * dt * p.gate, voice: ch, pos, params });
       }
       at += dt;
     }

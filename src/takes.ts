@@ -45,7 +45,7 @@ export function sanitizeTake(raw: unknown): Take | null {
     if (az !== null && el !== null && dist !== null) ev.pos = { az, el, dist };
     if (e?.params && typeof e.params === "object") {
       ev.params = {};
-      for (const [k, [lo, hi]] of Object.entries({ shape: [0, 47], timbre: [0, 1], color: [0, 1], pos: [0, 1], pan: [-1, 1], semis: [-48, 48] })) {
+      for (const [k, [lo, hi]] of Object.entries({ shape: [0, 47], timbre: [0, 1], color: [0, 1], attack: [0, 1], release: [0, 1], pos: [0, 1], pan: [-1, 1], semis: [-48, 48] })) {
         const v = fin(e.params[k], lo, hi);
         if (v !== null) ev.params[k] = v;
       }

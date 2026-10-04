@@ -5,7 +5,7 @@ import { delaySeconds, driveCurve, filterHz, filterQ, impulse, REVERB_NAMES, REV
 import { capture, sanitizeTake, takePattern, type Take } from "./takes.ts";
 import { CUSTOM, effectiveMask, GRAIN, marbles, SAMPLER, SCALES, type TParams } from "./marbles.ts";
 import { SHAPES } from "./braids/shapes.ts";
-import { DEFAULTS, MODELS, R, decode, encode, sanitize } from "./presets.ts";
+import { DEFAULTS, FACTORY, MODELS, R, decode, encode, sanitize } from "./presets.ts";
 import { plan, position, unplan } from "./space.ts";
 import workletUrl from "./braids/worklet.js?url";
 import grainUrl from "./grains.js?url";
@@ -171,6 +171,7 @@ const stack = html(`<div class="stack"></div>`); // Clock and Takes share one gr
 app.append(stack);
 const clock = section("Clock", stack);
 slider(clock, "tick length (s)", R.step, DEFAULTS.step, () => p.step, (v) => { p.step = v; updateFx(); });
+slider(clock, "note length", R.gate, DEFAULTS.gate, () => p.gate, (v) => (p.gate = v), "how long each note is held, as a fraction of the tick (above 1 they overlap)");
 slider(clock, "jitter", R.jitter, DEFAULTS.jitter, () => p.jitter, (v) => (p.jitter = v));
 
 const rhythm = section("Rhythm");
@@ -237,6 +238,8 @@ p.voices.forEach((v, i) => {
   select(s, "shape", SHAPES.map((n, k) => [String(k), n]), String(DEFAULTS.voices[i].shape), () => String(v.shape), (x) => (v.shape = +x));
   slider(s, "timbre", R.timbre, DEFAULTS.voices[i].timbre, () => v.timbre, (x) => (v.timbre = x));
   slider(s, "color", R.color, DEFAULTS.voices[i].color, () => v.color, (x) => (v.color = x));
+  slider(s, "attack", R.attack, DEFAULTS.voices[i].attack, () => v.attack, (x) => (v.attack = x), "attack time, 2 ms to 4 s");
+  slider(s, "release", R.release, DEFAULTS.voices[i].release, () => v.release, (x) => (v.release = x), "release time, 40 ms to 4 s");
   const more = html(`<details><summary>position &amp; motion</summary></details>`); // spatial controls, folded away
   s.append(more);
   slider(more, "azimuth (°)", R.az, DEFAULTS.voices[i].az, () => v.az, (x) => { v.az = x; updatePanners(); });
@@ -446,13 +449,13 @@ const saved = bar.querySelector("#saved") as HTMLSelectElement, name = bar.query
 const status = bar.querySelector("#status")!;
 const say = (m: string) => (status.textContent = m);
 const refreshList = (pick = "") => {
-  saved.innerHTML = `<option value="">presets…</option>` + Object.keys(store()).map((n) => `<option>${n.replace(/[<&]/g, "")}</option>`).join("");
+  saved.innerHTML = `<option value="">presets…</option>` + [...Object.keys(FACTORY), ...Object.keys(store())].map((n) => `<option>${n.replace(/[<&]/g, "")}</option>`).join("");
   saved.value = pick;
 };
 refreshList();
 saved.onchange = () => {
   if (!saved.value) return;
-  apply(sanitize(store()[saved.value]));
+  apply(sanitize(FACTORY[saved.value] ?? store()[saved.value]));
   name.value = saved.value;
   say(`loaded ${saved.value}`);
 };

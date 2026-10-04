@@ -23,7 +23,7 @@ test("dejaVu 1 only reorders: values come from the existing loop", () => {
 
 import { tStream as tStreamFull, DRUMS, type TModel, type TCore } from "./marbles.ts";
 const tStream = (seed: number, p: TCore) => { const n = tStreamFull(seed, p); return () => n().mask; };
-const T = (model: TModel, bias: number, dejaVu = 0, length = 8) => ({ model, bias, dejaVu, length, seed: 1, hrtf: true, volume: 0.8, delayMix: 0, delayTicks: 3, delayFeedback: 0.4, reverbMix: 0, reverbSize: 2, drive: 0, chorusMix: 0, filter: 1, filterRes: 0, spaceDejaVu: 0.5, spaceLength: 8, grain: { on: false, source: 0, size: 0.5, scatter: 0.3, follow: 0.5, spread: 0.5, level: 0.8, delaySend: 0, reverbSend: 0 }, sampler: { on: false, source: 0, length: 0.5, scatter: 0.3, follow: 0.5, level: 0.8, delaySend: 0, reverbSend: 0 } });
+const T = (model: TModel, bias: number, dejaVu = 0, length = 8) => ({ model, bias, dejaVu, length, gate: 0.5, seed: 1, hrtf: true, volume: 0.8, delayMix: 0, delayTicks: 3, delayFeedback: 0.4, reverbMix: 0, reverbSize: 2, drive: 0, chorusMix: 0, filter: 1, filterRes: 0, spaceDejaVu: 0.5, spaceLength: 8, grain: { on: false, source: 0, size: 0.5, scatter: 0.3, follow: 0.5, spread: 0.5, level: 0.8, delaySend: 0, reverbSend: 0 }, sampler: { on: false, source: 0, length: 0.5, scatter: 0.3, follow: 0.5, level: 0.8, delaySend: 0, reverbSend: 0 } });
 
 test("t: complementary bernoulli fires exactly one channel; bias extremes pin it", () => {
   for (const m of take(64, tStream(3, T("bernoulli", 0.5)))) assert.ok(m === 1 || m === 2);
