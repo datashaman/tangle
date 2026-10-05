@@ -443,7 +443,7 @@ const apply = (next: TParams) => {
 const bar = document.getElementById("presets")!;
 bar.innerHTML = `<select id="saved" aria-label="saved presets"></select>
   <input id="name" type="text" placeholder="preset name" aria-label="preset name" size="16">
-  <button id="save">save</button><button id="del">delete</button><button id="share">copy link</button>
+  <button id="save">save</button><button id="del">delete</button><button id="share">copy link</button><button id="export" title="Download this preset as a .tangle.json file">export</button><button id="import" title="Load a preset file">import</button><input id="file" type="file" accept=".json,application/json" hidden>
   <span id="status" role="status"></span>`;
 const saved = bar.querySelector("#saved") as HTMLSelectElement, name = bar.querySelector("#name") as HTMLInputElement;
 const status = bar.querySelector("#status")!;
@@ -471,6 +471,23 @@ saved.onchange = () => {
   save(rest);
   say(`deleted ${saved.value}`);
   refreshList();
+};
+(bar.querySelector("#export") as HTMLElement).onclick = () => {
+  const n = name.value.trim().replace(/[^\w .-]/g, "") || "tangle-preset";
+  const a = Object.assign(document.createElement("a"), {
+    href: URL.createObjectURL(new Blob([JSON.stringify(p, null, 2)], { type: "application/json" })), download: `${n}.tangle.json`,
+  });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  say(`saved ${a.download}`);
+};
+const fileIn2 = bar.querySelector("#file") as HTMLInputElement;
+(bar.querySelector("#import") as HTMLElement).onclick = () => fileIn2.click();
+fileIn2.onchange = async () => {
+  const f = fileIn2.files?.[0];
+  fileIn2.value = "";
+  if (!f) return;
+  try { apply(sanitize(JSON.parse(await f.text()))); name.value = f.name.replace(/\.tangle\.json$|\.json$/, ""); say(`loaded ${f.name}`); } catch { say("not a preset file"); }
 };
 (bar.querySelector("#share") as HTMLElement).onclick = async () => {
   location.hash = "p=" + encode(p);
