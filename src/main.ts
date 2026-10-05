@@ -496,12 +496,11 @@ fileIn2.onchange = async () => {
   try { apply(sanitize(JSON.parse(await f.text()))); name.value = f.name.replace(/\.tangle\.json$|\.json$/, ""); say(`loaded ${f.name}`); } catch { say("not a preset file"); }
 };
 (bar.querySelector("#share") as HTMLElement).onclick = async () => {
-  location.hash = "p=" + encode(p);
+  location.hash = "p=" + (await encode(p));
   try { await navigator.clipboard.writeText(location.href); say("link copied"); } catch { say("link is in the address bar"); }
 };
 const fromHash = location.hash.match(/^#p=(.+)$/)?.[1];
-const shared = fromHash && decode(fromHash);
-if (shared) { apply(shared); say("loaded shared preset"); }
+if (fromHash) void decode(fromHash).then((shared) => { if (shared) { apply(shared); say("loaded shared preset"); } });
 
 // --- randomize: one click re-rolls the config; undo steps back through the previous settings ---
 const history: TParams[] = [];
