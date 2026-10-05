@@ -75,10 +75,34 @@ export function sanitize(raw: unknown, base: TParams = DEFAULTS): TParams {
   };
 }
 
-export const encode = (p: TParams) => btoa(JSON.stringify(p)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+// Share links hold only what differs from DEFAULTS, deflated, as base64url with a "z" prefix (unchanged voices are null).
+// The older format, plain base64url JSON of the whole object, always starts with "ey" and still decodes.
+type Json = Record<string, unknown> | unknown[];
+const diff = (a: any, b: any): any => {
+  if (a === null || typeof a !== "object") return a === b ? undefined : a;
+  const out: any = Array.isArray(a) ? [] : {};
+  let changed = false;
+  for (const k of Object.keys(a)) {
+    const d = diff(a[k], b?.[k]);
+    if (d !== undefined) { out[k] = d; changed = true; } else if (Array.isArray(a)) out[k] = null;
+  }
+  return changed ? out : undefined;
+};
+const b64 = (u: Uint8Array) => btoa(String.fromCharCode(...u)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64 = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+const pipe = async (data: Uint8Array<ArrayBuffer>, t: CompressionStream | DecompressionStream) =>
+  new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(t)).arrayBuffer());
 
-export function decode(s: string): TParams | null {
-  try { return sanitize(JSON.parse(atob(s.replace(/-/g, "+").replace(/_/g, "/")))); } catch { return null; }
+export async function encode(p: TParams): Promise<string> {
+  const json = JSON.stringify(diff(p, DEFAULTS) ?? {});
+  return "z" + b64(await pipe(new TextEncoder().encode(json), new CompressionStream("deflate-raw")));
+}
+
+export async function decode(s: string): Promise<TParams | null> {
+  try {
+    const raw = s.startsWith("z") ? new TextDecoder().decode(await pipe(unb64(s.slice(1)) as Uint8Array<ArrayBuffer>, new DecompressionStream("deflate-raw"))) : atob(s.replace(/-/g, "+").replace(/_/g, "/"));
+    return sanitize(JSON.parse(raw));
+  } catch { return null; }
 }
 
 // Built-in presets, listed ahead of the user's own. Slow ticks, long overlapping notes with slow envelopes, lots of space.
