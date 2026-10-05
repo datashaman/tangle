@@ -267,7 +267,7 @@ fxSlider(filterCol, "cutoff", "filter");
 fxSlider(filterCol, "resonance", "filterRes");
 select(reverbCol, "size", REVERB_NAMES.map((n, i) => [String(i), n]), String(DEFAULTS.reverbSize), () => String(p.reverbSize), (v) => { p.reverbSize = +v; updateFx(); });
 
-const samplerCard = section("Sampler", wideCol);
+const samplerCard = section("Sampler", side); // moved below the Space card once that exists
 samplerCard.title = "Plays slices of a sample you load, one per pulse of the source voice";
 const loadBtn = html(`<div class="btns"><button type="button" title="Load a sample (wav, mp3, ogg, ...)">load sample…</button><span id="sample-name" class="hint">no sample</span><input type="file" accept="audio/*" hidden></div>`);
 samplerCard.append(loadBtn);
@@ -381,6 +381,7 @@ delTakeBtn.onclick = () => {
 };
 
 const space = section("Space", side);
+side.append(samplerCard); // bottom right, under Space
 slider(space, "spatial déjà vu", R.spaceDejaVu, DEFAULTS.spaceDejaVu, () => p.spaceDejaVu, (v) => { p.spaceDejaVu = v; forget(); });
 slider(space, "spatial length", R.spaceLength, DEFAULTS.spaceLength, () => p.spaceLength, (v) => (p.spaceLength = v));
 // Top-down pad: drag a voice around the listener. 10 svg units = 1 distance unit; front is up.
