@@ -443,11 +443,16 @@ const apply = (next: TParams) => {
 const bar = document.getElementById("presets")!;
 bar.innerHTML = `<select id="saved" aria-label="saved presets"></select>
   <input id="name" type="text" placeholder="preset name" aria-label="preset name" size="11">
-  <button id="save">save</button><button id="del">delete</button><button id="share">copy link</button><button id="export" title="Download this preset as a .tangle.json file">export</button><button id="import" title="Load a preset file">import</button><input id="file" type="file" accept=".json,application/json" hidden>
-  <span id="status" role="status"></span>`;
+  <button id="save">save</button><button id="del">delete</button><button id="share">copy link</button><button id="export" title="Download this preset as a .tangle.json file">export</button><button id="import" title="Load a preset file">import</button><input id="file" type="file" accept=".json,application/json" hidden>`;
 const saved = bar.querySelector("#saved") as HTMLSelectElement, name = bar.querySelector("#name") as HTMLInputElement;
-const status = bar.querySelector("#status")!;
-const say = (m: string) => { status.textContent = m; (status as HTMLElement).title = m; };
+const status = document.getElementById("status")!;
+let statusTimer = 0;
+const say = (m: string) => { // a toast at the bottom of the window, gone after a few seconds
+  status.textContent = m;
+  status.classList.add("show");
+  clearTimeout(statusTimer);
+  statusTimer = window.setTimeout(() => status.classList.remove("show"), 4000);
+};
 const refreshList = (pick = "") => {
   saved.innerHTML = `<option value="">presets…</option>` + [...Object.keys(FACTORY), ...Object.keys(store())].map((n) => `<option>${n.replace(/[<&]/g, "")}</option>`).join("");
   saved.value = pick;
