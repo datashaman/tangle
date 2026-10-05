@@ -442,12 +442,12 @@ const apply = (next: TParams) => {
 
 const bar = document.getElementById("presets")!;
 bar.innerHTML = `<select id="saved" aria-label="saved presets"></select>
-  <input id="name" type="text" placeholder="preset name" aria-label="preset name" size="16">
+  <input id="name" type="text" placeholder="preset name" aria-label="preset name" size="11">
   <button id="save">save</button><button id="del">delete</button><button id="share">copy link</button><button id="export" title="Download this preset as a .tangle.json file">export</button><button id="import" title="Load a preset file">import</button><input id="file" type="file" accept=".json,application/json" hidden>
   <span id="status" role="status"></span>`;
 const saved = bar.querySelector("#saved") as HTMLSelectElement, name = bar.querySelector("#name") as HTMLInputElement;
 const status = bar.querySelector("#status")!;
-const say = (m: string) => (status.textContent = m);
+const say = (m: string) => { status.textContent = m; (status as HTMLElement).title = m; };
 const refreshList = (pick = "") => {
   saved.innerHTML = `<option value="">presets…</option>` + [...Object.keys(FACTORY), ...Object.keys(store())].map((n) => `<option>${n.replace(/[<&]/g, "")}</option>`).join("");
   saved.value = pick;
